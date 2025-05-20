@@ -1,0 +1,51 @@
+#docs/auth/register.yml
+tags:
+  - Auth
+summary: Registrasi akun baru
+description: Endpoint untuk mendaftarkan akun pengguna baru.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: body
+    name: body
+    required: true
+    description: Data user baru
+    schema:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: johndoe
+        password:
+          type: string
+          example: rahasia123
+responses:
+  201:
+    description: Registrasi berhasil
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Registrasi berhasil
+  400:
+    description: Input tidak lengkap
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Field 'username' dan 'password' wajib diisi
+  409:
+    description: Username sudah digunakan
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Username sudah digunakan
