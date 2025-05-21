@@ -737,7 +737,15 @@ def token_required(f):
 ```
 
 ## 7. SISWA AUTH API CRUD
-
+```
+git branch 02_auth_siswa         # Membuat branch baru
+git checkout 02_auth_siswa       # Berpindah ke branch tersebut
+# (lakukan perubahan pada file sesuai kebutuhan)
+TAMBAHKAN FILE GIT .gitignore
+git add .                       # Menambahkan semua perubahan ke staging area
+git commit -m "finish"          # Commit dengan pesan "finish"
+git push -u origin 02_auth_siswa # Push ke remote dan set tracking branch
+```
 ```yml
 #/docs/siswa_read_all
 tags:
