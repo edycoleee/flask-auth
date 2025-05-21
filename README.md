@@ -583,6 +583,8 @@ def login():
 
 #2. File: test/test_auth.py
 #...............
+import uuid
+
 def test_login(client):
     response = client.post('/login', json={
         "username": username,

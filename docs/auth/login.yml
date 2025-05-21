@@ -1,0 +1,53 @@
+tags:
+  - Auth
+summary: Login pengguna
+description: Endpoint untuk login dan mendapatkan token autentikasi.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: body
+    name: body
+    required: true
+    description: Data login pengguna
+    schema:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: johndoe
+        password:
+          type: string
+          example: rahasia123
+responses:
+  200:
+    description: Login berhasil
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Login berhasil
+        token:
+          type: string
+          example: 4a1f70de-5d72-48ac-9187-01d3b7c177dd
+  400:
+    description: Input tidak lengkap
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Field "username" dan "password" wajib diisi
+  401:
+    description: Login gagal
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Username atau password salah

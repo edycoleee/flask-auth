@@ -10,9 +10,10 @@ app = Flask(__name__)
 
 # b. konfigurasi CORS dan Swagger
 CORS(app)
+
 app.config['SWAGGER'] = {
     'title': 'BELAJAR AUTH API',
-    'uiversion': 3
+    'uiversion': 3,
 }
 
 # c. atur path default untuk database

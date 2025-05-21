@@ -1,0 +1,33 @@
+#auth/logout.yml
+tags:
+  - Auth
+summary: Logout pengguna
+description: Endpoint untuk logout dengan menghapus token autentikasi.
+consumes:
+  - application/json
+produces:
+  - application/json
+parameters:
+  - in: header
+    name: Authorization
+    required: true
+    type: string
+    description: Token autentikasi pengguna
+    example: 4a1f70de-5d72-48ac-9187-01d3b7c177dd
+responses:
+  200:
+    description: Logout berhasil
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Logout berhasil
+  401:
+    description: Token tidak valid atau tidak ada
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Token tidak valid
