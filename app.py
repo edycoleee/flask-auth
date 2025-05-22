@@ -14,6 +14,13 @@ CORS(app)
 app.config['SWAGGER'] = {
     'title': 'BELAJAR AUTH API',
     'uiversion': 3,
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
 }
 
 # c. atur path default untuk database
@@ -35,14 +42,23 @@ def init_db(db_path=None):
                 token TEXT
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tb_siswa (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nama TEXT NOT NULL,
+                alamat TEXT NOT NULL
+            )
+        ''')
 
 # f. panggil init_db dengan path dari config
 init_db()
 
 # g. Register blueprint (seperti Router di Express)
 from routes.auth import auth_bp
+from routes.siswa import siswa_bp
 
 app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
 
 # h. Jalankan aplikasi
 if __name__ == '__main__':

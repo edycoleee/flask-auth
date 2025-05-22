@@ -727,7 +727,7 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = request.headers.get('Authorization')
         if not token:
-            return jsonify({'error': 'Token diperlukan'}), 401
+            eturn jsonify({'error': 'Token tidak ditemukan'}), 401
         with get_db() as conn:
             user = conn.execute("SELECT * FROM tb_user WHERE token = ?", (token,)).fetchone()
             if not user:
@@ -737,6 +737,7 @@ def token_required(f):
 ```
 
 ## 7. SISWA AUTH API CRUD
+
 ```
 git branch 02_auth_siswa         # Membuat branch baru
 git checkout 02_auth_siswa       # Berpindah ke branch tersebut
@@ -746,8 +747,9 @@ git add .                       # Menambahkan semua perubahan ke staging area
 git commit -m "finish"          # Commit dengan pesan "finish"
 git push -u origin 02_auth_siswa # Push ke remote dan set tracking branch
 ```
+
 ```yml
-#/docs/siswa_read_all
+#/docs/siswa_read_all.yml
 tags:
   - Siswa
 summary: Ambil semua data siswa
@@ -760,7 +762,7 @@ parameters:
     in: header
     required: true
     type: string
-    description: Token autentikasi, format: `Bearer <token>`
+    description: Token autentikasi. Format: Bearer <token>
 
 responses:
   200:
@@ -804,18 +806,21 @@ responses:
           type: string
           example: Gagal mengambil data siswa
 
-#docs/siswa/create.yml
+#/docs/siswa/create.yml
 tags:
   - Siswa
 summary: Tambah siswa baru
+description: Endpoint untuk menambahkan data siswa baru. Wajib menyertakan token autentikasi.
 security:
   - ApiKeyAuth: []
+
 parameters:
   - name: Authorization
     in: header
     required: true
     type: string
-    description: Token autentikasi
+    description: Token autentikasi. Format: Bearer <token>
+
   - in: body
     name: body
     required: true
@@ -827,8 +832,11 @@ parameters:
       properties:
         nama:
           type: string
+          example: Budi
         alamat:
           type: string
+          example: Jakarta
+
 responses:
   201:
     description: Siswa berhasil ditambahkan
@@ -837,6 +845,29 @@ responses:
       properties:
         message:
           type: string
+          example: Siswa berhasil ditambahkan
+        data:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 1
+            nama:
+              type: string
+              example: Budi
+            alamat:
+              type: string
+              example: Jakarta
+
+  401:
+    description: Tidak diizinkan (token tidak valid atau tidak ada)
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Token tidak valid atau tidak ditemukan
+
   500:
     description: Gagal menambahkan siswa
     schema:
@@ -844,41 +875,81 @@ responses:
       properties:
         error:
           type: string
+          example: Gagal menambahkan siswa
+
+
 ```
 
 ```py
+# app.py
+import sqlite3
+import os
+from flask import Flask, jsonify
+from flask_cors import CORS
+from flasgger import Swagger
 
-#Definisi securityDefinitions di Swagger (app.py)
-# app.py (tambahkan sebelum inisialisasi Swagger)
+# a. create object app
+app = Flask(__name__)
+
+# b. konfigurasi CORS dan Swagger
+CORS(app)
+
 app.config['SWAGGER'] = {
     'title': 'BELAJAR AUTH API',
     'uiversion': 3,
     'securityDefinitions': {
         'ApiKeyAuth': {
             'type': 'apiKey',
-            'in': 'header',
             'name': 'Authorization',
-            'description': "Masukkan token dengan format `Bearer <token>`"
+            'in': 'header'
         }
     }
 }
 
+# c. atur path default untuk database
+app.config['DB_PATH'] = 'siswa.db'
 
+# d. inisialisasi Swagger
+swagger = Swagger(app)
 
-# app.py
-#.................
-#c. create route, method
-# Register blueprint >> Seperti Router() di Express
-# Register Blueprint >> siswa
-from routes.siswa import siswa_bp
+# e. Fungsi inisialisasi database
+def init_db(db_path=None):
+    if db_path is None:
+        db_path = app.config['DB_PATH']
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tb_user (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                token TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tb_siswa (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nama TEXT NOT NULL,
+                alamat TEXT NOT NULL
+            )
+        ''')
+
+# f. panggil init_db dengan path dari config
+init_db()
+
+# g. Register blueprint (seperti Router di Express)
 from routes.auth import auth_bp
+from routes.siswa import siswa_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(siswa_bp)
 
-
+# h. Jalankan aplikasi
+if __name__ == '__main__':
+    app.run(debug=True)
+    # Jika menggunakan Docker: app.run(host='0.0.0.0', port=5000, debug=True)
 
 # services/siswa_service.py
+import sqlite3
 from utils.db import get_db
 
 def get_db_connection():
@@ -931,6 +1002,7 @@ def update_siswa(siswa_id, nama, alamat):
     conn.close()
     return updated  # 0 jika tidak ada yang diupdate, 1 jika berhasil
 
+
 #routes/siswa.py
 from flask import Blueprint, request, jsonify
 from flasgger import swag_from
@@ -942,7 +1014,7 @@ siswa_bp = Blueprint('siswa', __name__)
 #- CREATE
 @siswa_bp.route('/siswa', methods=['POST'])
 @token_required
-@swag_from('../docs/siswa/create.yml')
+#@swag_from('../docs/siswa/create.yml')
 def create_siswa():
     try:
         data = request.get_json()
@@ -968,7 +1040,7 @@ def create_siswa():
 #- READ ALL
 @siswa_bp.route('/siswa', methods=['GET'])
 @token_required
-@swag_from('../docs/siswa/read_all.yml')
+#@swag_from('../docs/siswa/read_all.yml')
 def read_all_siswa():
     try:
         data = siswa_service.read_all_siswa()
@@ -983,7 +1055,7 @@ def read_all_siswa():
 #- READ ID
 @siswa_bp.route('/siswa/<int:siswa_id>', methods=['GET'])
 @token_required
-@swag_from('../docs/siswa_read_id.yml')
+#@swag_from('../docs/siswa_read_id.yml')
 def read_siswa_by_id(siswa_id):
     try:
         data = siswa_service.read_siswa_by_id(siswa_id)
@@ -1000,7 +1072,7 @@ def read_siswa_by_id(siswa_id):
 #- DELETE ID
 @siswa_bp.route('/siswa/<int:siswa_id>', methods=['DELETE'])
 @token_required
-@swag_from('../docs/siswa_delete.yml')
+#@swag_from('../docs/siswa_delete.yml')
 def delete_siswa(siswa_id):
     try:
         deleted = siswa_service.delete_siswa(siswa_id)
@@ -1019,7 +1091,7 @@ def delete_siswa(siswa_id):
 #- UPDATE ID
 @siswa_bp.route('/siswa/<int:siswa_id>', methods=['PUT'])
 @token_required
-@swag_from('../docs/siswa_update.yml')
+#@swag_from('../docs/siswa_update.yml')
 def update_siswa(siswa_id):
     try:
         data = request.get_json()
@@ -1046,8 +1118,6 @@ def update_siswa(siswa_id):
         print("Error:", e)
         return jsonify({"error": "Gagal memperbarui siswa"}), 500
 
-
-
 # test/test_siswa.py
 import os
 import pytest
@@ -1066,9 +1136,16 @@ def client():
     with app.test_client() as client:
         yield client
 
-    # Hapus database setelah test selesai
-    if os.path.exists(test_db_path):
+    # TEARDOWN - pastikan koneksi tidak aktif
+    import gc, time
+    gc.collect()         # Paksa garbage collection
+    time.sleep(0.1)      # Beri jeda agar file tidak lagi locked
+
+    try:
         os.remove(test_db_path)
+        print(f"[OK] {test_db_path} dihapus.")
+    except PermissionError as e:
+        print(f"[FAIL] Gagal hapus DB: {e}")
 
 @pytest.fixture(scope='module')
 def auth_headers(client):
@@ -1084,24 +1161,22 @@ def auth_headers(client):
         "password": "testpass"
     })
     token = response.get_json().get('token')
-
+    print("token :",token)
     return {
         "Authorization": token
     }
 
-def test_get_all_siswa(client):
-    # method (url)
-    response = client.get('/siswa')
-    # assert >> code success >> 200
+def test_get_all_siswa(client, auth_headers):
+    response = client.get('/siswa', headers=auth_headers)
     assert response.status_code == 200
     json_data = response.get_json()
-
+    print("json_data :",json_data)
     assert json_data['message'] == "Daftar siswa berhasil diambil"
     # assert >> berupa json >> list
     assert isinstance(json_data['data'], list)
 
-def test_create_siswa(client):
-    response = client.post('/siswa', json={"nama": "Silmi", "alamat": "Semarang"})
+def test_create_siswa(client, auth_headers):
+    response = client.post('/siswa', headers=auth_headers, json={"nama": "Silmi", "alamat": "Semarang"})
     assert response.status_code == 201
     json_data = response.get_json()
     assert json_data['message'] == "Siswa berhasil ditambahkan"
@@ -1112,34 +1187,34 @@ def test_create_siswa(client):
 from unittest.mock import patch
 
 # Test gagal insert karena data kosong atau field tidak lengkap
-def test_create_siswa_gagal_validasi(client):
+def test_create_siswa_gagal_validasi(client, auth_headers):
     # data kosong
-    response = client.post('/siswa', json={})
+    response = client.post('/siswa', headers=auth_headers, json={})
     assert response.status_code == 400
     assert response.get_json()['error'] == "Field 'nama' dan 'alamat' wajib diisi"
 
     # hanya ada nama
-    response = client.post('/siswa', json={"nama": "Silmi"})
+    response = client.post('/siswa', headers=auth_headers, json={"nama": "Silmi"})
     assert response.status_code == 400
 
     # hanya ada alamat
-    response = client.post('/siswa', json={"alamat": "Jakarta"})
+    response = client.post('/siswa', headers=auth_headers, json={"alamat": "Jakarta"})
     assert response.status_code == 400
 
 # Test gagal insert karena terjadi exception di service
-def test_create_siswa_gagal_exception(client):
+def test_create_siswa_gagal_exception(client, auth_headers):
     with patch('services.siswa_service.create_siswa', side_effect=Exception("DB error")):
-        response = client.post('/siswa', json={"nama": "Silmi", "alamat": "Semarang"})
+        response = client.post('/siswa', headers=auth_headers, json={"nama": "Silmi", "alamat": "Semarang"})
         assert response.status_code == 500
         assert response.get_json()['error'] == "Gagal menambahkan siswa"
 
-def test_read_siswa_by_id(client):
+def test_read_siswa_by_id(client, auth_headers):
     # Tambahkan siswa dulu
-    create_response = client.post('/siswa', json={"nama": "Coba", "alamat": "Bandung"})
+    create_response = client.post('/siswa', headers=auth_headers, json={"nama": "Coba", "alamat": "Bandung"})
     siswa_id = create_response.get_json()['data']['id']
 
     # Baca siswa yang sudah dibuat
-    response = client.get(f'/siswa/{siswa_id}')
+    response = client.get(f'/siswa/{siswa_id}', headers=auth_headers)
     assert response.status_code == 200
     json_data = response.get_json()
     assert json_data['message'] == "Data siswa ditemukan"
@@ -1148,34 +1223,34 @@ def test_read_siswa_by_id(client):
     assert json_data['data']['alamat'] == "Bandung"
 
     # Test siswa yang tidak ada
-    response_404 = client.get('/siswa/999999')
+    response_404 = client.get('/siswa/999999', headers=auth_headers)
     assert response_404.status_code == 404
     assert response_404.get_json()['error'] == "Siswa dengan ID tersebut tidak ditemukan"
 
-def test_delete_siswa(client):
+def test_delete_siswa(client, auth_headers):
     # Tambahkan siswa terlebih dahulu
-    create_response = client.post('/siswa', json={"nama": "Delete Me", "alamat": "Nowhere"})
+    create_response = client.post('/siswa', headers=auth_headers, json={"nama": "Delete Me", "alamat": "Nowhere"})
     siswa_id = create_response.get_json()['data']['id']
 
     # Lakukan DELETE
-    response = client.delete(f'/siswa/{siswa_id}')
+    response = client.delete(f'/siswa/{siswa_id}', headers=auth_headers)
     assert response.status_code == 200
     json_data = response.get_json()
     assert json_data['message'] == "Siswa berhasil dihapus"
     assert json_data['data']['id'] == siswa_id
 
     # DELETE lagi → harusnya 404
-    response_2 = client.delete(f'/siswa/{siswa_id}')
+    response_2 = client.delete(f'/siswa/{siswa_id}', headers=auth_headers)
     assert response_2.status_code == 404
     assert response_2.get_json()['error'] == "Siswa dengan ID tersebut tidak ditemukan"
 
-def test_update_siswa(client):
+def test_update_siswa(client, auth_headers):
     # Tambah siswa dulu agar bisa diupdate
-    create_response = client.post('/siswa', json={"nama": "Ani", "alamat": "Solo"})
+    create_response = client.post('/siswa', headers=auth_headers, json={"nama": "Ani", "alamat": "Solo"})
     siswa_id = create_response.get_json()['data']['id']
 
     # Update siswa
-    response = client.put(f'/siswa/{siswa_id}', json={"nama": "Ani Updated", "alamat": "Semarang"})
+    response = client.put(f'/siswa/{siswa_id}', headers=auth_headers, json={"nama": "Ani Updated", "alamat": "Semarang"})
     assert response.status_code == 200
     json_data = response.get_json()
     assert json_data['message'] == "Siswa berhasil diperbarui"
