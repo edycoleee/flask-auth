@@ -1,0 +1,42 @@
+#docs/siswa/update.yml
+tags:
+  - Siswa
+summary: Perbarui data siswa berdasarkan ID
+security:
+  - ApiKeyAuth: []
+parameters:
+  - name: Authorization
+    in: header
+    required: true
+    type: string
+    description: Token autentikasi
+  - name: siswa_id
+    in: path
+    required: true
+    type: integer
+    description: ID siswa
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required:
+        - nama
+        - alamat
+      properties:
+        nama:
+          type: string
+        alamat:
+          type: string
+responses:
+  200:
+    description: Siswa berhasil diperbarui
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+  404:
+    description: Siswa tidak ditemukan
+  500:
+    description: Gagal memperbarui siswa

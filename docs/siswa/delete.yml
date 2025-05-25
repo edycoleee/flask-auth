@@ -1,0 +1,29 @@
+#docs/siswa/delete.yml
+tags:
+  - Siswa
+summary: Hapus siswa berdasarkan ID
+security:
+  - ApiKeyAuth: []
+parameters:
+  - name: Authorization
+    in: header
+    required: true
+    type: string
+    description: Token autentikasi
+  - name: siswa_id
+    in: path
+    required: true
+    type: integer
+    description: ID siswa
+responses:
+  200:
+    description: Siswa berhasil dihapus
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+  404:
+    description: Siswa tidak ditemukan
+  500:
+    description: Gagal menghapus siswa

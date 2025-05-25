@@ -1,0 +1,68 @@
+tags:
+  - Siswa
+summary: Tambah siswa baru
+description: Endpoint untuk menambahkan data siswa baru. Wajib menyertakan token autentikasi.
+security:
+  - ApiKeyAuth: []
+
+parameters:
+  - name: Authorization
+    in: header
+    required: true
+    type: string
+    description: Token autentikasi. 
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required:
+        - nama
+        - alamat
+      properties:
+        nama:
+          type: string
+          example: Budi
+        alamat:
+          type: string
+          example: Jakarta
+
+responses:
+  201:
+    description: Siswa berhasil ditambahkan
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Siswa berhasil ditambahkan
+        data:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 1
+            nama:
+              type: string
+              example: Budi
+            alamat:
+              type: string
+              example: Jakarta
+
+  401:
+    description: Tidak diizinkan (token tidak valid atau tidak ada)
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Token tidak valid atau tidak ditemukan
+
+  500:
+    description: Gagal menambahkan siswa
+    schema:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Gagal menambahkan siswa

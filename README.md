@@ -18,6 +18,23 @@ git push -u origin main
 
 ## API AUTH SPESIFICATION
 
+| No  | Method | URL         | Request JSON (Body)                                   | Response JSON (Success / Error)                                                                            |
+| --- | ------ | ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | POST   | `/register` | `{ "username": "johndoe", "password": "rahasia123" }` | ✅ **201 Created**<br>`{ "message": "Registrasi berhasil" }`                                               |
+|     |        |             |                                                       | ⚠️ **400 Bad Request** (jika field kosong)<br>`{ "error": "Field 'username' dan 'password' wajib diisi" }` |
+|     |        |             |                                                       | ⛔ **409 Conflict** (username sudah terdaftar)<br>`{ "error": "Username sudah digunakan" }`                |
+
+| No  | Method | URL      | Request JSON (Body)                                   | Response JSON (Success / Error)                                                                           |
+| --- | ------ | -------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 2   | POST   | `/login` | `{ "username": "johndoe", "password": "rahasia123" }` | ✅ **200 OK**<br>`{ "message": "Login berhasil", "token": "uuid" }`                                       |
+|     |        |          |                                                       | ⚠️ **400 Bad Request** (field kosong)<br>`{ "error": "Field \"username\" dan \"password\" wajib diisi" }` |
+|     |        |          |                                                       | ⛔ **401 Unauthorized** (login gagal)<br>`{ "error": "Username atau password salah" }`                    |
+
+| No  | Method | URL       | Request Header                  | Response JSON (Success / Error)                               |
+| --- | ------ | --------- | ------------------------------- | ------------------------------------------------------------- |
+| 3   | POST   | `/logout` | `Authorization: Bearer <token>` | ✅ **200 OK**<br>`{ "message": "Logout berhasil" }`           |
+|     |        |           |                                 | ⛔ **401 Unauthorized**<br>`{ "error": "Token tidak valid" }` |
+
 ## 1. PERSIAPAN
 
 ```py
@@ -88,10 +105,11 @@ pytest
 
 ## 2. DATABASE PROD DAN TEST >> API REGISTER
 
-| No  | Method | URL       | Request JSON                                     | Response JSON (Berhasil)                              | Response JSON (Gagal)                                     |
-| --- | ------ | --------- | ------------------------------------------------ | ----------------------------------------------------- | --------------------------------------------------------- |
-| 1   | POST   | /register | `{ "username": "user1", "password": "pass123" }` | `201 Created`: `{ "message": "Registrasi berhasil" }` | `409 Conflict`: `{ "error": "Username sudah digunakan" }` |
-| 2   | POST   | /register | `{ "username": "" }`                             |
+| No  | Method | URL         | Request JSON (Body)                                   | Response JSON (Success / Error)                                                                            |
+| --- | ------ | ----------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | POST   | `/register` | `{ "username": "johndoe", "password": "rahasia123" }` | ✅ **201 Created**<br>`{ "message": "Registrasi berhasil" }`                                               |
+|     |        |             |                                                       | ⚠️ **400 Bad Request** (jika field kosong)<br>`{ "error": "Field 'username' dan 'password' wajib diisi" }` |
+|     |        |             |                                                       | ⛔ **409 Conflict** (username sudah terdaftar)<br>`{ "error": "Username sudah digunakan" }`                |
 
 ```
 project/
@@ -490,9 +508,11 @@ def test_register_duplicate_username(client):
 
 API SPESIFIKASI
 
-| No  | Method | URL    | Request JSON                                     | Response JSON (Berhasil)                          | Response JSON (Gagal)                                             |
-| --- | ------ | ------ | ------------------------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------- |
-| 2   | POST   | /login | `{ "username": "user1", "password": "pass123" }` | `{ "message": "Login berhasil", "token": "..." }` | `401 Unauthorized`: `{ "error": "Username atau password salah" }` |
+| No  | Method | URL      | Request JSON (Body)                                   | Response JSON (Success / Error)                                                                           |
+| --- | ------ | -------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 2   | POST   | `/login` | `{ "username": "johndoe", "password": "rahasia123" }` | ✅ **200 OK**<br>`{ "message": "Login berhasil", "token": "uuid" }`                                       |
+|     |        |          |                                                       | ⚠️ **400 Bad Request** (field kosong)<br>`{ "error": "Field \"username\" dan \"password\" wajib diisi" }` |
+|     |        |          |                                                       | ⛔ **401 Unauthorized** (login gagal)<br>`{ "error": "Username atau password salah" }`                    |
 
 SQL QUERY
 
@@ -628,9 +648,10 @@ def test_login_missing_fields(client):
 
 API SPESIFIKASI
 
-| No  | Method | URL     | Request JSON                              | Response JSON (Berhasil)           | Response JSON (Gagal)                                  |
-| --- | ------ | ------- | ----------------------------------------- | ---------------------------------- | ------------------------------------------------------ |
-| 3   | POST   | /logout | (Header: `Authorization: Bearer <token>`) | `{ "message": "Logout berhasil" }` | `401 Unauthorized`: `{ "error": "Token tidak valid" }` |
+| No  | Method | URL       | Request Header                  | Response JSON (Success / Error)                               |
+| --- | ------ | --------- | ------------------------------- | ------------------------------------------------------------- |
+| 3   | POST   | `/logout` | `Authorization: Bearer <token>` | ✅ **200 OK**<br>`{ "message": "Logout berhasil" }`           |
+|     |        |           |                                 | ⛔ **401 Unauthorized**<br>`{ "error": "Token tidak valid" }` |
 
 SQL QUERY
 
@@ -738,6 +759,15 @@ def token_required(f):
 
 ## 7. SISWA AUTH API CRUD
 
+| No  | Method | URL         | Request Body + Header                                                            | Response (Success / Error)                                                                                                                                                                                                                                                                                        |
+| --- | ------ | ----------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | POST   | /siswa      | Body: `{ "nama": string, "alamat": string }`<br>Header: `Authorization: <token>` | **Success:**<br>`201`<br>{ "message": "Siswa berhasil ditambahkan", "data": { "id": int, "nama": string, "alamat": string } }<br>**Error:**<br>`400` - Field 'nama' dan 'alamat' wajib diisi<br>`401` - Token tidak valid atau tidak ditemukan<br>`500` - Gagal menambahkan siswa                                 |
+| 2   | GET    | /siswa      | Header: `Authorization: <token>`                                                 | **Success:**<br>`200`<br>{ "message": "Daftar siswa berhasil diambil", "data": \[ { "id": int, "nama": string, "alamat": string }, ... ] }<br>**Error:**<br>`401` - Token tidak valid atau tidak ditemukan<br>`500` - Gagal mengambil data siswa                                                                  |
+| 3   | GET    | /siswa/<id> | Header: `Authorization: <token>`                                                 | **Success:**<br>`200`<br>{ "message": "Data siswa ditemukan", "data": { "id": int, "nama": string, "alamat": string } }<br>**Error:**<br>`404` - Siswa tidak ditemukan<br>`401` - Token tidak valid atau tidak ditemukan<br>`500` - Gagal mengambil data siswa                                                    |
+| 4   | DELETE | /siswa/<id> | Header: `Authorization: <token>`                                                 | **Success:**<br>`200`<br>{ "message": "Siswa berhasil dihapus", "data": { "id": int } }<br>**Error:**<br>`404` - Siswa tidak ditemukan<br>`401` - Token tidak valid atau tidak ditemukan<br>`500` - Gagal menghapus siswa                                                                                         |
+| 5   | PUT    | /siswa/<id> | Body: `{ "nama": string, "alamat": string }`<br>Header: `Authorization: <token>` | **Success:**<br>`200`<br>{ "message": "Siswa berhasil diperbarui", "data": { "id": int, "nama": string, "alamat": string } }<br>**Error:**<br>`400` - Field 'nama' dan 'alamat' wajib diisi<br>`404` - Siswa tidak ditemukan<br>`401` - Token tidak valid atau tidak ditemukan<br>`500` - Gagal memperbarui siswa |
+| 6   | POST   | /logout     | Header: `Authorization: <token>`                                                 | **Success:**<br>`200`<br>{ "message": "Logout berhasil" }<br>**Error:**<br>`401` - Token tidak ditemukan<br>`401` - Token tidak valid                                                                                                                                                                             |
+
 ```
 git branch 02_auth_siswa         # Membuat branch baru
 git checkout 02_auth_siswa       # Berpindah ke branch tersebut
@@ -749,7 +779,7 @@ git push -u origin 02_auth_siswa # Push ke remote dan set tracking branch
 ```
 
 ```yml
-#/docs/siswa_read_all.yml
+#/docs/read_all.yml
 tags:
   - Siswa
 summary: Ambil semua data siswa
@@ -762,8 +792,7 @@ parameters:
     in: header
     required: true
     type: string
-    description: Token autentikasi. Format: Bearer <token>
-
+    description: Token autentikasi.
 responses:
   200:
     description: Daftar semua siswa
@@ -876,8 +905,115 @@ responses:
         error:
           type: string
           example: Gagal menambahkan siswa
+```
 
+```yml
+#docs/siswa/delete.yml
+tags:
+  - Siswa
+summary: Hapus siswa berdasarkan ID
+security:
+  - ApiKeyAuth: []
+parameters:
+  - name: Authorization
+    in: header
+    required: true
+    type: string
+    description: Token autentikasi
+  - name: siswa_id
+    in: path
+    required: true
+    type: integer
+    description: ID siswa
+responses:
+  200:
+    description: Siswa berhasil dihapus
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+  404:
+    description: Siswa tidak ditemukan
+  500:
+    description: Gagal menghapus siswa
 
+#docs/siswa/update.yml
+tags:
+  - Siswa
+summary: Perbarui data siswa berdasarkan ID
+security:
+  - ApiKeyAuth: []
+parameters:
+  - name: Authorization
+    in: header
+    required: true
+    type: string
+    description: Token autentikasi
+  - name: siswa_id
+    in: path
+    required: true
+    type: integer
+    description: ID siswa
+  - in: body
+    name: body
+    required: true
+    schema:
+      type: object
+      required:
+        - nama
+        - alamat
+      properties:
+        nama:
+          type: string
+        alamat:
+          type: string
+responses:
+  200:
+    description: Siswa berhasil diperbarui
+    schema:
+      type: object
+      properties:
+        message:
+          type: string
+  404:
+    description: Siswa tidak ditemukan
+  500:
+    description: Gagal memperbarui siswa
+
+#docs/siswa/read_id.yml
+tags:
+  - Siswa
+summary: Ambil data siswa berdasarkan ID
+security:
+  - ApiKeyAuth: []
+parameters:
+  - name: Authorization
+    in: header
+    required: true
+    type: string
+    description: Token autentikasi
+  - name: siswa_id
+    in: path
+    required: true
+    type: integer
+    description: ID siswa
+responses:
+  200:
+    description: Data siswa ditemukan
+    schema:
+      type: object
+      properties:
+        id:
+          type: integer
+        nama:
+          type: string
+        alamat:
+          type: string
+  404:
+    description: Siswa tidak ditemukan
+  500:
+    description: Gagal mengambil data
 ```
 
 ```py
@@ -1260,116 +1396,7 @@ def test_update_siswa(client, auth_headers):
 
 ```
 
-## 8. SISWA AUTH API READID-DELETE-UPDATE
-
-```yml
-#docs/siswa/delete.yml
-tags:
-  - Siswa
-summary: Hapus siswa berdasarkan ID
-security:
-  - ApiKeyAuth: []
-parameters:
-  - name: Authorization
-    in: header
-    required: true
-    type: string
-    description: Token autentikasi
-  - name: id
-    in: path
-    required: true
-    type: integer
-    description: ID siswa
-responses:
-  200:
-    description: Siswa berhasil dihapus
-    schema:
-      type: object
-      properties:
-        message:
-          type: string
-  404:
-    description: Siswa tidak ditemukan
-  500:
-    description: Gagal menghapus siswa
-
-#docs/siswa/update.yml
-tags:
-  - Siswa
-summary: Perbarui data siswa berdasarkan ID
-security:
-  - ApiKeyAuth: []
-parameters:
-  - name: Authorization
-    in: header
-    required: true
-    type: string
-    description: Token autentikasi
-  - name: id
-    in: path
-    required: true
-    type: integer
-    description: ID siswa
-  - in: body
-    name: body
-    required: true
-    schema:
-      type: object
-      required:
-        - nama
-        - alamat
-      properties:
-        nama:
-          type: string
-        alamat:
-          type: string
-responses:
-  200:
-    description: Siswa berhasil diperbarui
-    schema:
-      type: object
-      properties:
-        message:
-          type: string
-  404:
-    description: Siswa tidak ditemukan
-  500:
-    description: Gagal memperbarui siswa
-
-#docs/siswa/read_id.yml
-tags:
-  - Siswa
-summary: Ambil data siswa berdasarkan ID
-security:
-  - ApiKeyAuth: []
-parameters:
-  - name: Authorization
-    in: header
-    required: true
-    type: string
-    description: Token autentikasi
-  - name: id
-    in: path
-    required: true
-    type: integer
-    description: ID siswa
-responses:
-  200:
-    description: Data siswa ditemukan
-    schema:
-      type: object
-      properties:
-        id:
-          type: integer
-        nama:
-          type: string
-        alamat:
-          type: string
-  404:
-    description: Siswa tidak ditemukan
-  500:
-    description: Gagal mengambil data
-```
+## 8. SISWA AUTH API FRONTEND REACTJS
 
 ```py
 

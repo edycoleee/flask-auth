@@ -9,7 +9,7 @@ siswa_bp = Blueprint('siswa', __name__)
 #- CREATE
 @siswa_bp.route('/siswa', methods=['POST'])
 @token_required
-#@swag_from('../docs/siswa/create.yml')
+@swag_from('../docs/siswa/create.yml')
 def create_siswa():
     try:
         data = request.get_json()
@@ -35,7 +35,7 @@ def create_siswa():
 #- READ ALL
 @siswa_bp.route('/siswa', methods=['GET'])
 @token_required
-#@swag_from('../docs/siswa/read_all.yml')
+@swag_from('../docs/siswa/read_all.yml')
 def read_all_siswa():
     try:
         data = siswa_service.read_all_siswa()
@@ -50,7 +50,7 @@ def read_all_siswa():
 #- READ ID
 @siswa_bp.route('/siswa/<int:siswa_id>', methods=['GET'])
 @token_required
-#@swag_from('../docs/siswa_read_id.yml')
+@swag_from('../docs/siswa/read_id.yml')
 def read_siswa_by_id(siswa_id):
     try:
         data = siswa_service.read_siswa_by_id(siswa_id)
@@ -67,7 +67,7 @@ def read_siswa_by_id(siswa_id):
 #- DELETE ID
 @siswa_bp.route('/siswa/<int:siswa_id>', methods=['DELETE'])
 @token_required
-#@swag_from('../docs/siswa_delete.yml')
+@swag_from('../docs/siswa/delete.yml')
 def delete_siswa(siswa_id):
     try:
         deleted = siswa_service.delete_siswa(siswa_id)
@@ -86,7 +86,7 @@ def delete_siswa(siswa_id):
 #- UPDATE ID
 @siswa_bp.route('/siswa/<int:siswa_id>', methods=['PUT'])
 @token_required
-#@swag_from('../docs/siswa_update.yml')
+@swag_from('../docs/siswa/update.yml')
 def update_siswa(siswa_id):
     try:
         data = request.get_json()

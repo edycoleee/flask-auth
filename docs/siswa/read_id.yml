@@ -1,0 +1,33 @@
+#docs/siswa/read_id.yml
+tags:
+  - Siswa
+summary: Ambil data siswa berdasarkan ID
+security:
+  - ApiKeyAuth: []
+parameters:
+  - name: Authorization
+    in: header
+    required: true
+    type: string
+    description: Token autentikasi
+  - name: siswa_id
+    in: path
+    required: true
+    type: integer
+    description: ID siswa
+responses:
+  200:
+    description: Data siswa ditemukan
+    schema:
+      type: object
+      properties:
+        id:
+          type: integer
+        nama:
+          type: string
+        alamat:
+          type: string
+  404:
+    description: Siswa tidak ditemukan
+  500:
+    description: Gagal mengambil data
