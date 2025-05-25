@@ -1398,11 +1398,77 @@ def test_update_siswa(client, auth_headers):
 
 ## 8. SISWA AUTH API FRONTEND REACTJS
 
-```py
+## 9. DEPLOY DOCKER SQLITE
+
+```
+.
+├── app.py
+├── siswa.db
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+├── routes/
+├── services/
+├── utils/
+├── middleware/
+└── docs/
 
 ```
 
-## 9. DEPLOY DOCKER SQLITE
+```Dockerfile
+# Gunakan image Python slim
+FROM python:3.10-slim
+
+# Set environment variable
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Set working directory
+WORKDIR /app
+
+# Salin semua file
+COPY . .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose port Flask
+EXPOSE 5000
+
+# Jalankan Flask
+CMD ["python", "app.py"]
+
+```
+
+```yml
+#docker-compose.yml
+version: "3.9"
+
+services:
+  flask-api:
+    build: .
+    container_name: flask_auth_api
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - ./siswa.db:/app/siswa.db # persist file SQLite
+    restart: always
+```
+
+requirements.txt
+
+```
+flask
+flask-cors
+flasgger
+pysqlite3-binary
+
+```
+
+docker-compose up --build
+
+http://localhost:5000/apidocs http://<IP_SERVER>:5000/apidocs
 
 ## 10. DATABASE MYSQL
 
