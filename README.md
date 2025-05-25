@@ -1398,6 +1398,848 @@ def test_update_siswa(client, auth_headers):
 
 ## 8. SISWA AUTH API FRONTEND REACTJS
 
+```
+git branch 03_reactjs         # Membuat branch baru
+git checkout 03_reactj       # Berpindah ke branch tersebut
+# (lakukan perubahan pada file sesuai kebutuhan)
+TAMBAHKAN FILE GIT .gitignore
+git add .                       # Menambahkan semua perubahan ke staging area
+git commit -m "finish"          # Commit dengan pesan "finish"
+git push -u origin 03_reactj # Push ke remote dan set tracking branch
+```
+
+STRUKTUR FOLDER UTAMA
+
+```
+project-root/
+├── backend/                  # Flask API & MongoDB/PostgreSQL config
+│   └── (semua file backend kamu)
+├── frontend/                 # ReactJS frontend (Vite)
+│   ├── Dockerfile
+│   └── (semua file Vite frontend kamu)
+└── docker-compose.yml
+
+```
+
+```
+# MEMBUAT APLIKASI FRONTEND
+npm create vite@latest frontend --template react
+cd frontend
+npm install axios react-router-dom
+
+#TAMBAHKAN .gitignore
+
+src/
+├── App.jsx
+├── main.jsx
+├── api/
+│   └── axios.js
+├── context/
+│   └── AuthContext.jsx
+├── pages/
+│   ├── Landing.jsx
+│   ├── Register.jsx
+│   ├── Login.jsx
+│   ├── Dashboard.jsx
+│   ├── AddSiswa.jsx
+│   └── EditSiswa.jsx
+└── components/
+    └── SiswaTable.jsx
+
+```
+
+```js
+//src/api/axios.js
+import axios from "axios";
+
+const api = axios.create({
+  baseURL: "http://localhost:5000",
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = token;
+  }
+  return config;
+});
+
+export default api;
+
+
+//src/context/AuthContext.jsx
+import React, { createContext, useState, useEffect } from "react";
+import api from "../api/axios";
+
+export const AuthContext = createContext();
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+
+  // Check token presence on mount
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      setUser({ token }); // Simplified, no user detail fetch
+    }
+  }, []);
+
+  const login = async (username, password) => {
+    const res = await api.post("/login", { username, password });
+    if (res.data.token) {
+      localStorage.setItem("token", res.data.token);
+      setUser({ username, token: res.data.token });
+    }
+    return res;
+  };
+
+  const logout = async () => {
+    await api.post("/logout");
+    localStorage.removeItem("token");
+    setUser(null);
+  };
+
+  const register = async (username, password) => {
+    return await api.post("/register", { username, password });
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, register }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+
+//src/main.jsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import { AuthProvider } from "./context/AuthContext";
+import { BrowserRouter } from "react-router-dom";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <AuthProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </AuthProvider>
+  </React.StrictMode>
+);
+
+
+//src/App.jsx
+import React, { useContext } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+
+import Landing from "./pages/Landing";
+import Register from "./pages/Register";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import AddSiswa from "./pages/AddSiswa";
+import EditSiswa from "./pages/EditSiswa";
+
+import { AuthContext } from "./context/AuthContext";
+
+function PrivateRoute({ children }) {
+  const { user } = useContext(AuthContext);
+  if (!user) return <Navigate to="/" replace />;
+  return children;
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/dashboard"
+        element={
+          <PrivateRoute>
+            <Dashboard />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/add-siswa"
+        element={
+          <PrivateRoute>
+            <AddSiswa />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/edit-siswa/:id"
+        element={
+          <PrivateRoute>
+            <EditSiswa />
+          </PrivateRoute>
+        }
+      />
+    </Routes>
+  );
+}
+
+
+//src/pages/Landing.jsx
+import React from "react";
+import { Link } from "react-router-dom";
+
+export default function Landing() {
+  return (
+    <div data-testid="landing-page">
+      <h1>Selamat Datang</h1>
+      <Link to="/register" data-testid="link-register">
+        Register
+      </Link>{" "}
+      |{" "}
+      <Link to="/login" data-testid="link-login">
+        Login
+      </Link>
+    </div>
+  );
+}
+
+
+//src/pages/Register.jsx
+import React, { useState, useContext } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
+
+export default function Register() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const { register } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    try {
+      await register(username, password);
+      navigate("/login");
+    } catch (err) {
+      setError(err.response?.data?.error || "Register gagal");
+    }
+  }
+
+  return (
+    <div data-testid="register-page">
+      <h2>Register</h2>
+      <form onSubmit={onSubmit}>
+        <input
+          data-testid="input-username"
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+        />
+        <br />
+        <input
+          data-testid="input-password"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <br />
+        <button type="submit" data-testid="btn-register">
+          Register
+        </button>
+      </form>
+      {error && <p data-testid="error-message">{error}</p>}
+      <p>
+        Sudah punya akun? <Link to="/login">Login</Link>
+      </p>
+    </div>
+  );
+}
+
+
+//src/pages/Login.jsx
+import React, { useState, useContext } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { AuthContext } from "../context/AuthContext";
+
+export default function Login() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const { login } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    try {
+      await login(username, password);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.error || "Login gagal");
+    }
+  }
+
+  return (
+    <div data-testid="login-page">
+      <h2>Login</h2>
+      <form onSubmit={onSubmit}>
+        <input
+          data-testid="input-username"
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+        />
+        <br />
+        <input
+          data-testid="input-password"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <br />
+        <button type="submit" data-testid="btn-login">
+          Login
+        </button>
+      </form>
+      {error && <p data-testid="error-message">{error}</p>}
+      <p>
+        Belum punya akun? <Link to="/register">Register</Link>
+      </p>
+    </div>
+  );
+}
+
+
+//src/components/SiswaTable.jsx
+import React from "react";
+import { Link } from "react-router-dom";
+
+export default function SiswaTable({ siswaList, onDelete }) {
+  return (
+    <table data-testid="siswa-table" border="1">
+      <thead>
+        <tr>
+          <th>Nama</th>
+          <th>Alamat</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {siswaList.map((siswa) => (
+          <tr key={siswa.id} data-testid="siswa-row">
+            <td>{siswa.nama}</td>
+            <td>{siswa.alamat}</td>
+            <td>
+              <Link to={`/edit-siswa/${siswa.id}`} data-testid={`btn-edit-${siswa.id}`}>
+                Edit
+              </Link>{" "}
+              |{" "}
+              <button
+                onClick={() => onDelete(siswa.id)}
+                data-testid={`btn-delete-${siswa.id}`}
+              >
+                Delete
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+
+//src/pages/Dashboard.jsx
+import React, { useState, useEffect, useContext } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import api from "../api/axios";
+import SiswaTable from "../components/SiswaTable";
+import { AuthContext } from "../context/AuthContext";
+
+export default function Dashboard() {
+  const [siswaList, setSiswaList] = useState([]);
+  const { logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchSiswa();
+  }, []);
+
+  async function fetchSiswa() {
+    try {
+      const res = await api.get("/siswa");
+      setSiswaList(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("Yakin ingin menghapus?")) return;
+    try {
+      await api.delete(`/siswa/${id}`);
+      fetchSiswa();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function onLogout() {
+    await logout();
+    navigate("/");
+  }
+
+  return (
+    <div data-testid="dashboard-page">
+      <h2>Dashboard</h2>
+      <button onClick={() => navigate("/add-siswa")} data-testid="btn-add-siswa">
+        Tambah Siswa
+      </button>
+      <button onClick={onLogout} data-testid="btn-logout" style={{ marginLeft: 20 }}>
+        Logout
+      </button>
+      <SiswaTable siswaList={siswaList} onDelete={handleDelete} />
+    </div>
+  );
+}
+
+
+//src/pages/AddSiswa.jsx
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../api/axios";
+
+export default function AddSiswa() {
+  const [nama, setNama] = useState("");
+  const [alamat, setAlamat] = useState("");
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    try {
+      await api.post("/siswa", { nama, alamat });
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.error || "Gagal menambah siswa");
+    }
+  }
+
+  return (
+    <div data-testid="add-siswa-page">
+      <h2>Tambah Siswa</h2>
+      <form onSubmit={onSubmit}>
+        <input
+          data-testid="input-nama"
+          type="text"
+          placeholder="Nama"
+          value={nama}
+          onChange={(e) => setNama(e.target.value)}
+          required
+        />
+        <br />
+        <input
+          data-testid="input-alamat"
+          type="text"
+          placeholder="Alamat"
+          value={alamat}
+          onChange={(e) => setAlamat(e.target.value)}
+          required
+        />
+        <br />
+        <button type="submit" data-testid="btn-save">
+          Simpan
+        </button>{" "}
+        <button
+          type="button"
+          onClick={() => navigate("/dashboard")}
+          data-testid="btn-cancel"
+        >
+          Batal
+        </button>
+      </form>
+      {error && <p data-testid="error-message">{error}</p>}
+    </div>
+  );
+}
+
+
+//src/pages/EditSiswa.jsx
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import api from "../api/axios";
+
+export default function EditSiswa() {
+  const [nama, setNama] = useState("");
+  const [alamat, setAlamat] = useState("");
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const { id } = useParams();
+
+  useEffect(() => {
+    async function fetchSiswa() {
+      try {
+        const res = await api.get(`/siswa/${id}`);
+        setNama(res.data.nama);
+        setAlamat(res.data.alamat);
+      } catch (err) {
+        setError("Siswa tidak ditemukan");
+      }
+    }
+    fetchSiswa();
+  }, [id]);
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    try {
+      await api.put(`/siswa/${id}`, { nama, alamat });
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err.response?.data?.error || "Gagal update siswa");
+    }
+  }
+
+  return (
+    <div data-testid="edit-siswa-page">
+      <h2>Edit Siswa</h2>
+      <form onSubmit={onSubmit}>
+        <input
+          data-testid="input-nama"
+          type="text"
+          placeholder="Nama"
+          value={nama}
+          onChange={(e) => setNama(e.target.value)}
+          required
+        />
+        <br />
+        <input
+          data-testid="input-alamat"
+          type="text"
+          placeholder="Alamat"
+          value={alamat}
+          onChange={(e) => setAlamat(e.target.value)}
+          required
+        />
+        <br />
+        <button type="submit" data-testid="btn-save">
+          Simpan
+        </button>{" "}
+        <button
+          type="button"
+          onClick={() => navigate("/dashboard")}
+          data-testid="btn-cancel"
+        >
+          Batal
+        </button>
+      </form>
+      {error && <p data-testid="error-message">{error}</p>}
+    </div>
+  );
+}
+
+```
+
+Pada file src/api/axios.js, kita sudah membuat interceptor:
+
+```js
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = token; // ← Token dikirim ke semua API
+  }
+  return config;
+});
+```
+
+Dengan ini: Setiap pemanggilan api.get(...), api.post(...), api.put(...), api.delete(...), dll otomatis akan membawa Authorization: <token>.
+Kalau ingin validasi token expired, atau user tidak login (401), tambahkan interceptor response:
+
+```js
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/login"; // atau navigate('/login')
+    }
+    return Promise.reject(err);
+  }
+);
+```
+
+1. Struktur Folder Sederhana
+
+```
+e2e/
+├── auth.spec.js
+├── siswa.spec.js
+├── utils/
+│   └── api.js
+playwright.config.js
+
+```
+
+2. Instalasi Playwright
+
+```
+npm install -D @playwright/test
+npx playwright install
+```
+
+3. playwright.config.js
+
+```js
+// playwright.config.js
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: {
+    baseURL: "http://localhost:5000", // Ganti jika URL server kamu berbeda
+  },
+});
+```
+
+```js
+// tests/auth_siswa.spec.js
+import { test, expect } from "@playwright/test";
+
+const BASE_URL = "http://localhost:5173";
+const API_BASE = "http://localhost:5000";
+const dummyUser = {
+  username: "testuser",
+  password: "testpass123",
+};
+const dummySiswa = {
+  nama: "Ahmad Putra",
+  alamat: "Jl. Pendidikan 45",
+};
+
+let token = "";
+
+// Test UI dan API sekaligus
+
+test.describe("AUTH & SISWA UI + API test", () => {
+  test("Register, Login, Add, Edit, Delete Siswa", async ({
+    page,
+    request,
+  }) => {
+    // Clear user jika sudah ada
+    await request.post(`${API_BASE}/logout`, {
+      headers: { Authorization: token },
+    });
+
+    // --- REGISTER ---
+    await page.goto(`${BASE_URL}/register`);
+    await page.getByTestId("register-username").fill(dummyUser.username);
+    await page.getByTestId("register-password").fill(dummyUser.password);
+    await page.getByTestId("register-button").click();
+
+    await expect(page).toHaveURL(/.*login/);
+
+    // --- LOGIN ---
+    await page.goto(`${BASE_URL}/login`);
+    await page.getByTestId("login-username").fill(dummyUser.username);
+    await page.getByTestId("login-password").fill(dummyUser.password);
+    await page.getByTestId("login-button").click();
+
+    await expect(page).toHaveURL(`${BASE_URL}/dashboard`);
+
+    // Ambil token dari localStorage
+    token = await page.evaluate(() => localStorage.getItem("token"));
+    expect(token).not.toBeNull();
+
+    // --- ADD SISWA ---
+    await page.getByTestId("add-siswa-button").click();
+    await page.getByTestId("input-nama").fill(dummySiswa.nama);
+    await page.getByTestId("input-alamat").fill(dummySiswa.alamat);
+    await page.getByTestId("save-button").click();
+
+    await expect(page).toHaveURL(`${BASE_URL}/dashboard`);
+    await expect(page.getByTestId("siswa-nama")).toContainText(dummySiswa.nama);
+
+    // --- EDIT SISWA ---
+    await page.getByTestId("edit-siswa-button").click();
+    await page.getByTestId("input-nama").fill("Ahmad Updated");
+    await page.getByTestId("save-button").click();
+    await expect(page.getByTestId("siswa-nama")).toContainText("Ahmad Updated");
+
+    // --- DELETE SISWA ---
+    await page.getByTestId("delete-siswa-button").click();
+    await expect(page.getByTestId("siswa-nama")).not.toContainText(
+      "Ahmad Updated"
+    );
+
+    // --- LOGOUT ---
+    await page.getByTestId("logout-button").click();
+    await expect(page).toHaveURL(`${BASE_URL}/login`);
+  });
+});
+```
+
+.gitignore
+
+```
+# Node modules
+/node_modules
+
+# Build files
+/dist
+/build
+
+# Testing artifacts
+/test-results
+/playwright-report
+/coverage
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Temporary files
+*~
+```
+
+```
+project-root/
+├── backend/                  # Flask API & MongoDB/PostgreSQL config
+│   └── (semua file backend kamu)
+├── frontend/                 # ReactJS frontend (Vite)
+│   ├── Dockerfile
+│   └── (semua file Vite frontend kamu)
+└── docker-compose.yml
+
+```
+
+frontend/Dockerfile
+
+```dockerfile
+# frontend/Dockerfile
+FROM node:20-alpine as build
+
+WORKDIR /app
+COPY . .
+RUN npm install && npm run build
+
+# Serve with nginx
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+
+```
+
+frontend/nginx.conf
+
+```nginx
+# frontend/nginx.conf
+server {
+  listen 80;
+  server_name localhost;
+
+  location / {
+    root /usr/share/nginx/html;
+    index index.html index.htm;
+    try_files $uri $uri/ /index.html;
+  }
+}
+```
+
+```yml
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    container_name: flask-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - FLASK_ENV=development
+    depends_on:
+      - mongo
+    networks:
+      - fullstack
+
+  frontend:
+    build: ./frontend
+    container_name: react-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - fullstack
+
+  mongo:
+    image: mongo:6
+    container_name: mongo-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - fullstack
+
+  mongo-express:
+    image: mongo-express
+    container_name: mongo-admin
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    depends_on:
+      - mongo
+    networks:
+      - fullstack
+
+volumes:
+  mongo_data:
+
+networks:
+  fullstack:
+```
+
+frontend/.env
+
+```
+VITE_API_URL=http://localhost:5000
+```
+
+docker compose up --build
+
+Frontend: http://localhost:3000
+
+Backend API: http://localhost:5000
+
 ## 9. DEPLOY DOCKER SQLITE
 
 ```
@@ -1474,10 +2316,888 @@ http://localhost:5000/apidocs http://<IP_SERVER>:5000/apidocs
 
 ## 11. DEPLOY DOCKER MYSQL
 
+```dockerfile
+# Dockerfile tetap sama
+FROM python:3.10-slim
+WORKDIR /app
+COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
+EXPOSE 5000
+CMD ["python", "app.py"]
+
+```
+
+docker-compose.yml
+
+```yml
+version: "3.9"
+
+services:
+  flask-api:
+    build: .
+    container_name: flask_auth_api
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - DB_NAME=flaskdb
+    depends_on:
+      - mysql
+    restart: always
+
+  mysql:
+    image: mysql:8
+    container_name: flask_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: flaskdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:
+```
+
+requirements.txt
+
+```
+flask
+flask-cors
+flasgger
+mysql-connector-python
+
+```
+
+```py
+# utils/db.py
+import mysql.connector
+import os
+
+def get_db():
+    return mysql.connector.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        user=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASSWORD", ""),
+        database=os.getenv("DB_NAME", "flaskdb")
+    )
+
+# app.py
+import os
+from flask import Flask, jsonify
+from flask_cors import CORS
+from flasgger import Swagger
+from utils.db import get_db
+
+app = Flask(__name__)
+CORS(app)
+
+app.config['SWAGGER'] = {
+    'title': 'BELAJAR AUTH API',
+    'uiversion': 3,
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
+
+swagger = Swagger(app)
+
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tb_user (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            token TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tb_siswa (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nama VARCHAR(255) NOT NULL,
+            alamat TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+init_db()
+
+from routes.auth import auth_bp
+from routes.siswa import siswa_bp
+app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+# services/siswa_service.py
+from utils.db import get_db
+
+def row_to_dict(cursor, row):
+    return {desc[0]: value for desc, value in zip(cursor.description, row)}
+
+def get_db_connection():
+    conn = get_db()
+    return conn
+
+def read_all_siswa():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nama, alamat FROM tb_siswa")
+    rows = cursor.fetchall()
+    data = [row_to_dict(cursor, row) for row in rows]
+    cursor.close()
+    conn.close()
+    return data
+
+def create_siswa(nama, alamat):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO tb_siswa (nama, alamat) VALUES (%s, %s)",
+        (nama, alamat)
+    )
+    conn.commit()
+    siswa_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
+    return siswa_id
+
+def read_siswa_by_id(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nama, alamat FROM tb_siswa WHERE id = %s", (id,))
+    row = cursor.fetchone()
+    result = row_to_dict(cursor, row) if row else None
+    cursor.close()
+    conn.close()
+    return result
+
+def delete_siswa(siswa_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM tb_siswa WHERE id = %s", (siswa_id,))
+    conn.commit()
+    deleted = cursor.rowcount
+    cursor.close()
+    conn.close()
+    return deleted
+
+def update_siswa(siswa_id, nama, alamat):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE tb_siswa SET nama = %s, alamat = %s WHERE id = %s",
+        (nama, alamat, siswa_id)
+    )
+    conn.commit()
+    updated = cursor.rowcount
+    cursor.close()
+    conn.close()
+    return updated
+
+# middleware/auth_middleware.py
+from functools import wraps
+from flask import request, jsonify
+from utils.db import get_db
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token diperlukan'}), 401
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM tb_user WHERE token = %s", (token,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not user:
+            return jsonify({'error': 'Token tidak valid'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+# routes/auth.py
+from flask import Blueprint, request, jsonify
+from flasgger.utils import swag_from
+from utils.db import get_db
+import secrets
+
+auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+@auth_bp.route('/register', methods=['POST'])
+@swag_from({
+    'tags': ['Auth'],
+    'parameters': [
+        {
+            'name': 'body',
+            'in': 'body',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'username': {'type': 'string'},
+                    'password': {'type': 'string'}
+                },
+                'required': ['username', 'password']
+            }
+        }
+    ],
+    'responses': {
+        200: {'description': 'Registrasi berhasil'},
+        400: {'description': 'Username sudah digunakan'}
+    }
+})
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM tb_user WHERE username = %s", (username,))
+    if cursor.fetchone():
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Username sudah digunakan'}), 400
+
+    cursor.execute("INSERT INTO tb_user (username, password) VALUES (%s, %s)", (username, password))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return jsonify({'message': 'Registrasi berhasil'}), 200
+
+@auth_bp.route('/login', methods=['POST'])
+@swag_from({
+    'tags': ['Auth'],
+    'parameters': [
+        {
+            'name': 'body',
+            'in': 'body',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'username': {'type': 'string'},
+                    'password': {'type': 'string'}
+                },
+                'required': ['username', 'password']
+            }
+        }
+    ],
+    'responses': {
+        200: {'description': 'Login berhasil'},
+        401: {'description': 'Username atau password salah'}
+    }
+})
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM tb_user WHERE username = %s AND password = %s", (username, password))
+    user = cursor.fetchone()
+
+    if not user:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Username atau password salah'}), 401
+
+    token = secrets.token_hex(16)
+    cursor.execute("UPDATE tb_user SET token = %s WHERE id = %s", (token, user['id']))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({'message': 'Login berhasil', 'token': token}), 200
+
+@auth_bp.route('/logout', methods=['POST'])
+@swag_from({
+    'tags': ['Auth'],
+    'security': [{'ApiKeyAuth': []}],
+    'responses': {
+        200: {'description': 'Logout berhasil'},
+        401: {'description': 'Token tidak valid'}
+    }
+})
+def logout():
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({'error': 'Token diperlukan'}), 401
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM tb_user WHERE token = %s", (token,))
+    user = cursor.fetchone()
+    if not user:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Token tidak valid'}), 401
+
+    cursor.execute("UPDATE tb_user SET token = NULL WHERE token = %s", (token,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return jsonify({'message': 'Logout berhasil'}), 200
+
+```
+
 ## 12. DATABASE POSTGRE
 
 ## 13. DEPLOY DOCKER FLASK POSTGRE PGADMIN
 
+1. Dockerfile
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY . .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+CMD ["python", "app.py"]
+
+```
+
+2. docker-compose.yml
+
+```yml
+version: "3.8"
+
+services:
+  web:
+    build: .
+    container_name: flask_api
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=siswa_db
+      - DB_USER=siswa_user
+      - DB_PASSWORD=siswa_pass
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: siswa_db
+      POSTGRES_USER: siswa_user
+      POSTGRES_PASSWORD: siswa_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
+```
+
+requirements.txt
+
+```
+Flask==2.3.3
+flasgger==0.9.7.1
+flask-cors==4.0.0
+psycopg2-binary==2.9.9
+
+```
+
+```py
+
+#4. utils/db.py
+import psycopg2
+import os
+from flask import current_app
+
+def get_db():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=os.getenv("DB_PORT", 5432),
+        database=os.getenv("DB_NAME", "siswa_db"),
+        user=os.getenv("DB_USER", "siswa_user"),
+        password=os.getenv("DB_PASSWORD", "siswa_pass")
+    )
+
+#5. app.py
+import os
+from flask import Flask, jsonify
+from flask_cors import CORS
+from flasgger import Swagger
+from utils.db import get_db
+
+app = Flask(__name__)
+CORS(app)
+
+app.config['SWAGGER'] = {
+    'title': 'BELAJAR AUTH API',
+    'uiversion': 3,
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
+
+swagger = Swagger(app)
+
+def init_db():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS tb_user (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                token TEXT
+            )
+        ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS tb_siswa (
+                id SERIAL PRIMARY KEY,
+                nama TEXT NOT NULL,
+                alamat TEXT NOT NULL
+            )
+        ''')
+        conn.commit()
+
+init_db()
+
+from routes.auth import auth_bp
+from routes.siswa import siswa_bp
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+#6. services/siswa_service.py
+from utils.db import get_db
+
+def read_all_siswa():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nama, alamat FROM tb_siswa")
+    rows = cur.fetchall()
+    conn.close()
+    return [{"id": r[0], "nama": r[1], "alamat": r[2]} for r in rows]
+
+def create_siswa(nama, alamat):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO tb_siswa (nama, alamat) VALUES (%s, %s) RETURNING id",
+        (nama, alamat)
+    )
+    siswa_id = cur.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return siswa_id
+
+def read_siswa_by_id(siswa_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nama, alamat FROM tb_siswa WHERE id = %s", (siswa_id,))
+    row = cur.fetchone()
+    conn.close()
+    return {"id": row[0], "nama": row[1], "alamat": row[2]} if row else None
+
+def delete_siswa(siswa_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM tb_siswa WHERE id = %s", (siswa_id,))
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+def update_siswa(siswa_id, nama, alamat):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE tb_siswa SET nama = %s, alamat = %s WHERE id = %s",
+        (nama, alamat, siswa_id)
+    )
+    updated = cur.rowcount
+    conn.commit()
+    conn.close()
+    return updated
+
+
+#7. middleware/auth_middleware.py
+from functools import wraps
+from flask import request, jsonify
+from utils.db import get_db
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token diperlukan'}), 401
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM tb_user WHERE token = %s", (token,))
+        user = cur.fetchone()
+        conn.close()
+        if not user:
+            return jsonify({'error': 'Token tidak valid'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+#8. routes/auth.py
+import uuid
+import hashlib
+from flask import Blueprint, request, jsonify
+from flasgger.utils import swag_from
+from utils.db import get_db
+import psycopg2
+
+auth_bp = Blueprint('auth', __name__)
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+@auth_bp.route('/register', methods=['POST'])
+@swag_from('../docs/auth/register.yml')
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({"error": "Field 'username' dan 'password' wajib diisi"}), 400
+
+    password_hashed = hash_password(password)
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO tb_user (username, password) VALUES (%s, %s)",
+            (username, password_hashed)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Registrasi berhasil"}), 201
+    except psycopg2.IntegrityError:
+        return jsonify({"error": "Username sudah digunakan"}), 409
+    except Exception as e:
+        return jsonify({"error": f"Gagal mendaftar: {str(e)}"}), 500
+
+@auth_bp.route('/login', methods=['POST'])
+@swag_from('../docs/auth/login.yml')
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = hash_password(data.get('password'))
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tb_user WHERE username = %s AND password = %s", (username, password))
+    user = cur.fetchone()
+
+    if user:
+        token = str(uuid.uuid4())
+        cur.execute("UPDATE tb_user SET token = %s WHERE username = %s", (token, username))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Login berhasil", "token": token}), 200
+    conn.close()
+    return jsonify({"error": "Username atau password salah"}), 401
+
+@auth_bp.route('/logout', methods=['POST'])
+@swag_from('../docs/auth/logout.yml')
+def logout():
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({"error": "Token tidak ditemukan"}), 401
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE tb_user SET token = NULL WHERE token = %s", (token,))
+    conn.commit()
+    affected = cur.rowcount
+    conn.close()
+
+    if affected:
+        return jsonify({"message": "Logout berhasil"}), 200
+    return jsonify({"error": "Token tidak valid"}), 401
+
+```
+
 ## 14. DATABASE MONGODB
 
 ## 15. DEPLOY DOCKER FLASK MONGO
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY . .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+CMD ["python", "app.py"]
+
+```
+
+docker-compose.yml
+
+```yml
+version: "3.8"
+
+services:
+  web:
+    build: .
+    container_name: flask_api
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/siswa_db
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  mongo_express:
+    image: mongo-express:1.0.0
+    container_name: mongo_express
+    restart: always
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin123
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
+```
+
+```py
+#3. requirements.txt
+Flask==2.3.3
+flasgger==0.9.7.1
+flask-cors==4.0.0
+pymongo==4.3.3
+
+
+#4. utils/db.py
+from pymongo import MongoClient
+import os
+
+mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/siswa_db")
+client = MongoClient(mongo_uri)
+db = client.get_database()
+
+def get_db():
+    return db
+
+#5. app.py
+from flask import Flask
+from flask_cors import CORS
+from flasgger import Swagger
+
+app = Flask(__name__)
+CORS(app)
+
+app.config['SWAGGER'] = {
+    'title': 'BELAJAR AUTH API',
+    'uiversion': 3,
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
+
+swagger = Swagger(app)
+
+# No need init_db for MongoDB; collections auto-create on first insert
+
+from routes.auth import auth_bp
+from routes.siswa import siswa_bp
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+#6. services/siswa_service.py
+from utils.db import get_db
+from bson.objectid import ObjectId
+
+db = get_db()
+siswa_col = db.tb_siswa
+
+def read_all_siswa():
+    result = []
+    for doc in siswa_col.find():
+        result.append({
+            "id": str(doc["_id"]),
+            "nama": doc.get("nama"),
+            "alamat": doc.get("alamat")
+        })
+    return result
+
+def create_siswa(nama, alamat):
+    doc = {"nama": nama, "alamat": alamat}
+    result = siswa_col.insert_one(doc)
+    return str(result.inserted_id)
+
+def read_siswa_by_id(siswa_id):
+    doc = siswa_col.find_one({"_id": ObjectId(siswa_id)})
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "nama": doc.get("nama"),
+        "alamat": doc.get("alamat")
+    }
+
+def delete_siswa(siswa_id):
+    result = siswa_col.delete_one({"_id": ObjectId(siswa_id)})
+    return result.deleted_count
+
+def update_siswa(siswa_id, nama, alamat):
+    result = siswa_col.update_one(
+        {"_id": ObjectId(siswa_id)},
+        {"$set": {"nama": nama, "alamat": alamat}}
+    )
+    return result.modified_count
+
+#7. middleware/auth_middleware.py
+from functools import wraps
+from flask import request, jsonify
+from utils.db import get_db
+
+db = get_db()
+user_col = db.tb_user
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token diperlukan'}), 401
+        user = user_col.find_one({"token": token})
+        if not user:
+            return jsonify({'error': 'Token tidak valid'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+#8. routes/auth.py
+import uuid
+import hashlib
+from flask import Blueprint, request, jsonify
+from flasgger.utils import swag_from
+from utils.db import get_db
+
+auth_bp = Blueprint('auth', __name__)
+db = get_db()
+user_col = db.tb_user
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+@auth_bp.route('/register', methods=['POST'])
+@swag_from('../docs/auth/register.yml')
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({"error": "Field 'username' dan 'password' wajib diisi"}), 400
+
+    if user_col.find_one({"username": username}):
+        return jsonify({"error": "Username sudah digunakan"}), 409
+
+    user_col.insert_one({
+        "username": username,
+        "password": hash_password(password),
+        "token": None
+    })
+    return jsonify({"message": "Registrasi berhasil"}), 201
+
+@auth_bp.route('/login', methods=['POST'])
+@swag_from('../docs/auth/login.yml')
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = hash_password(data.get('password'))
+
+    user = user_col.find_one({"username": username, "password": password})
+    if not user:
+        return jsonify({"error": "Username atau password salah"}), 401
+
+    token = str(uuid.uuid4())
+    user_col.update_one({"_id": user["_id"]}, {"$set": {"token": token}})
+    return jsonify({"message": "Login berhasil", "token": token}), 200
+
+@auth_bp.route('/logout', methods=['POST'])
+@swag_from('../docs/auth/logout.yml')
+def logout():
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({"error": "Token tidak ditemukan"}), 401
+
+    result = user_col.update_one({"token": token}, {"$set": {"token": None}})
+    if result.modified_count == 0:
+        return jsonify({"error": "Token tidak valid"}), 401
+
+    return jsonify({"message": "Logout berhasil"}), 200
+
+
+```
