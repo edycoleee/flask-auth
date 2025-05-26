@@ -1423,6 +1423,85 @@ git push -u origin 03_docker_sqlite  # Push ke remote dan set tracking branch
 
 ```
 
+1. Buat Dockerfile, docker-compose.yml, requirements.txt
+
+```py
+# app.py
+import sqlite3
+import os
+from flask import Flask, jsonify
+from flask_cors import CORS
+from flasgger import Swagger
+
+# a. create object app
+app = Flask(__name__)
+
+# b. konfigurasi CORS dan Swagger
+CORS(app)
+
+app.config['SWAGGER'] = {
+    'title': 'BELAJAR AUTH API',
+    'uiversion': 3,
+    'specs_route': '/apidocs/',# <-- penting reverse proxy
+    'static_url_path': '/apidocs/flasgger_static',  # <-- penting reverse proxy
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
+
+# c. atur path default untuk database
+# app.config['DB_PATH'] = 'siswa.db'
+
+# pastikan direktori ada dan writable
+os.makedirs("instance", exist_ok=True)
+app.config['DB_PATH'] = 'instance/siswa.db'
+
+# d. inisialisasi Swagger
+swagger = Swagger(app)
+
+# e. Fungsi inisialisasi database
+def init_db(db_path=None):
+    if db_path is None:
+        db_path = app.config['DB_PATH']
+    with sqlite3.connect(db_path) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tb_user (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                token TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tb_siswa (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nama TEXT NOT NULL,
+                alamat TEXT NOT NULL
+            )
+        ''')
+
+# f. panggil init_db dengan path dari config
+init_db()
+
+# g. Register blueprint (seperti Router di Express)
+from routes.auth import auth_bp
+from routes.siswa import siswa_bp
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
+
+# h. Jalankan aplikasi
+if __name__ == '__main__':
+    # app.run(debug=True)
+    # Jika menggunakan Docker:
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+```
+
 ```Dockerfile
 # Gunakan image Python slim
 FROM python:3.10-slim
@@ -1459,8 +1538,8 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - .:/app
-      - ./siswa.db:/app/siswa.db # persist file SQLite
+      - .:/app # mount project folder
+      #- ./siswa.db:/app/siswa.db # persist file SQLite
     restart: always
 ```
 
@@ -1470,13 +1549,82 @@ requirements.txt
 flask
 flask-cors
 flasgger
-pysqlite3-binary
+```
+
+2. Copy semua data dengan winscp ke server ubuntu docker kecuali folder venv
+
+3. jalankan ssh ke server ubuntu
+
+```
+ssh silmi@192.168.10.2
+
+masuk ke folder
+docker compose up --build
+```
+
+```
+docker ps -a
+docker images
+docker rmi b750fe78269d
+docker compose down
+docker compose up --build -d
+```
+
+http://localhost:5000/apidocs http://192.168.10.2:5000/apidocs
+
+Supaya bisa diakses dari luar konfigurasikan
+
+1. subdomain cloudflare >> setting dns >> name flask.sulfat.my.id
+
+2. setting reverse proxy
+
+```
+root@raspberrypi:/etc/nginx/sites-available# nano reverse-proxy
+tambahkan
+
+server {
+    listen 80;
+    server_name flask.sulfat.my.id;
+
+    location / {
+        proxy_pass http://192.168.10.2:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+
+sudo systemctl status nginx
+sudo systemctl stop nginx
+sudo systemctl start nginx
+sudo systemctl reload nginx
+
+https://flask.sulfat.my.id/register
 
 ```
 
-docker-compose up --build
+3. tambahkan ke ddns untuk update IP
 
-http://localhost:5000/apidocs http://<IP_SERVER>:5000/apidocs
+```
+sudo su -
+root@raspberrypi:/home/silmi# nano cloudflare-ddns.sh
+ctrl + x >> Y
+
+
+#!/bin/bash
+
+# Cloudflare API Token (dapatkan dari Cloudflare Dashboard)
+CF_API_TOKEN="LdJXMaRcBf4HRAyCiB68cHIPf_XeF1FxrsdiC2HO"
+
+# Domain utama
+CF_ZONE_NAME="sulfat.my.id"
+
+# Daftar subdomain yang ingin diperbarui (tambahkan domain utama sebagai "")
+SUBDOMAINS=("" "satu" "dua" "home" "coba" "flask")
+
+```
 
 ## 8. SISWA AUTH API FRONTEND REACTJS
 

@@ -14,6 +14,8 @@ CORS(app)
 app.config['SWAGGER'] = {
     'title': 'BELAJAR AUTH API',
     'uiversion': 3,
+    'specs_route': '/apidocs/',# <-- penting reverse proxy
+    'static_url_path': '/apidocs/flasgger_static',  # <-- penting reverse proxy
     'securityDefinitions': {
         'ApiKeyAuth': {
             'type': 'apiKey',
@@ -24,7 +26,11 @@ app.config['SWAGGER'] = {
 }
 
 # c. atur path default untuk database
-app.config['DB_PATH'] = 'siswa.db'
+# app.config['DB_PATH'] = 'siswa.db'
+
+# pastikan direktori ada dan writable
+os.makedirs("instance", exist_ok=True)
+app.config['DB_PATH'] = 'instance/siswa.db'
 
 # d. inisialisasi Swagger
 swagger = Swagger(app)
@@ -62,5 +68,6 @@ app.register_blueprint(siswa_bp)
 
 # h. Jalankan aplikasi
 if __name__ == '__main__':
-    app.run(debug=True)
-    # Jika menggunakan Docker: app.run(host='0.0.0.0', port=5000, debug=True)
+    # app.run(debug=True)
+    # Jika menggunakan Docker: 
+    app.run(host='0.0.0.0', port=5000, debug=True)
