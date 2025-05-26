@@ -1626,6 +1626,945 @@ SUBDOMAINS=("" "satu" "dua" "home" "coba" "flask")
 
 ```
 
+## 10. DATABASE MYSQL
+
+```
+git branch 04_mysql_docker         # Membuat branch baru
+git checkout 04_mysql_docker          # Berpindah ke branch tersebut
+# (lakukan perubahan pada file sesuai kebutuhan)
+TAMBAHKAN FILE GIT .gitignore
+git add .                       # Menambahkan semua perubahan ke staging area
+git commit -m "finish"          # Commit dengan pesan "finish"
+git push -u origin 04_mysql_docker  # Push ke remote dan set tracking branch
+```
+
+```yml
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: flaskdb
+      MYSQL_USER: root
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql-data:
+```
+
+## 11. DEPLOY DOCKER MYSQL
+
+```dockerfile
+# Dockerfile tetap sama
+FROM python:3.10-slim
+WORKDIR /app
+COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
+EXPOSE 5000
+CMD ["python", "app.py"]
+
+```
+
+docker-compose.yml
+
+```yml
+version: "3.9"
+
+services:
+  flask-api:
+    build: .
+    container_name: flask_auth_api
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - DB_NAME=flaskdb
+    depends_on:
+      - mysql
+    restart: always
+
+  mysql:
+    image: mysql:8
+    container_name: flask_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: flaskdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:
+```
+
+requirements.txt
+
+```
+flask
+flask-cors
+flasgger
+mysql-connector-python
+
+```
+
+```py
+# utils/db.py
+import mysql.connector
+import os
+
+def get_db():
+    return mysql.connector.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        user=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASSWORD", ""),
+        database=os.getenv("DB_NAME", "flaskdb")
+    )
+
+# app.py
+import os
+from flask import Flask, jsonify
+from flask_cors import CORS
+from flasgger import Swagger
+from utils.db import get_db
+
+app = Flask(__name__)
+CORS(app)
+
+app.config['SWAGGER'] = {
+    'title': 'BELAJAR AUTH API',
+    'uiversion': 3,
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
+
+swagger = Swagger(app)
+
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tb_user (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            token TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS tb_siswa (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nama VARCHAR(255) NOT NULL,
+            alamat TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+init_db()
+
+from routes.auth import auth_bp
+from routes.siswa import siswa_bp
+app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+# services/siswa_service.py
+from utils.db import get_db
+
+def row_to_dict(cursor, row):
+    return {desc[0]: value for desc, value in zip(cursor.description, row)}
+
+def get_db_connection():
+    conn = get_db()
+    return conn
+
+def read_all_siswa():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nama, alamat FROM tb_siswa")
+    rows = cursor.fetchall()
+    data = [row_to_dict(cursor, row) for row in rows]
+    cursor.close()
+    conn.close()
+    return data
+
+def create_siswa(nama, alamat):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO tb_siswa (nama, alamat) VALUES (%s, %s)",
+        (nama, alamat)
+    )
+    conn.commit()
+    siswa_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
+    return siswa_id
+
+def read_siswa_by_id(id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, nama, alamat FROM tb_siswa WHERE id = %s", (id,))
+    row = cursor.fetchone()
+    result = row_to_dict(cursor, row) if row else None
+    cursor.close()
+    conn.close()
+    return result
+
+def delete_siswa(siswa_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM tb_siswa WHERE id = %s", (siswa_id,))
+    conn.commit()
+    deleted = cursor.rowcount
+    cursor.close()
+    conn.close()
+    return deleted
+
+def update_siswa(siswa_id, nama, alamat):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE tb_siswa SET nama = %s, alamat = %s WHERE id = %s",
+        (nama, alamat, siswa_id)
+    )
+    conn.commit()
+    updated = cursor.rowcount
+    cursor.close()
+    conn.close()
+    return updated
+
+# middleware/auth_middleware.py
+from functools import wraps
+from flask import request, jsonify
+from utils.db import get_db
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token diperlukan'}), 401
+        conn = get_db()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM tb_user WHERE token = %s", (token,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not user:
+            return jsonify({'error': 'Token tidak valid'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+# routes/auth.py
+from flask import Blueprint, request, jsonify
+from flasgger.utils import swag_from
+from utils.db import get_db
+import secrets
+
+auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+@auth_bp.route('/register', methods=['POST'])
+@swag_from({
+    'tags': ['Auth'],
+    'parameters': [
+        {
+            'name': 'body',
+            'in': 'body',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'username': {'type': 'string'},
+                    'password': {'type': 'string'}
+                },
+                'required': ['username', 'password']
+            }
+        }
+    ],
+    'responses': {
+        200: {'description': 'Registrasi berhasil'},
+        400: {'description': 'Username sudah digunakan'}
+    }
+})
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM tb_user WHERE username = %s", (username,))
+    if cursor.fetchone():
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Username sudah digunakan'}), 400
+
+    cursor.execute("INSERT INTO tb_user (username, password) VALUES (%s, %s)", (username, password))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return jsonify({'message': 'Registrasi berhasil'}), 200
+
+@auth_bp.route('/login', methods=['POST'])
+@swag_from({
+    'tags': ['Auth'],
+    'parameters': [
+        {
+            'name': 'body',
+            'in': 'body',
+            'schema': {
+                'type': 'object',
+                'properties': {
+                    'username': {'type': 'string'},
+                    'password': {'type': 'string'}
+                },
+                'required': ['username', 'password']
+            }
+        }
+    ],
+    'responses': {
+        200: {'description': 'Login berhasil'},
+        401: {'description': 'Username atau password salah'}
+    }
+})
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    conn = get_db()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM tb_user WHERE username = %s AND password = %s", (username, password))
+    user = cursor.fetchone()
+
+    if not user:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Username atau password salah'}), 401
+
+    token = secrets.token_hex(16)
+    cursor.execute("UPDATE tb_user SET token = %s WHERE id = %s", (token, user['id']))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({'message': 'Login berhasil', 'token': token}), 200
+
+@auth_bp.route('/logout', methods=['POST'])
+@swag_from({
+    'tags': ['Auth'],
+    'security': [{'ApiKeyAuth': []}],
+    'responses': {
+        200: {'description': 'Logout berhasil'},
+        401: {'description': 'Token tidak valid'}
+    }
+})
+def logout():
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({'error': 'Token diperlukan'}), 401
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM tb_user WHERE token = %s", (token,))
+    user = cursor.fetchone()
+    if not user:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Token tidak valid'}), 401
+
+    cursor.execute("UPDATE tb_user SET token = NULL WHERE token = %s", (token,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return jsonify({'message': 'Logout berhasil'}), 200
+
+```
+
+## 12. DATABASE POSTGRE
+
+```
+git branch 03_docker_sqlite         # Membuat branch baru
+git checkout 03_docker_sqlite        # Berpindah ke branch tersebut
+# (lakukan perubahan pada file sesuai kebutuhan)
+TAMBAHKAN FILE GIT .gitignore
+git add .                       # Menambahkan semua perubahan ke staging area
+git commit -m "finish"          # Commit dengan pesan "finish"
+git push -u origin 03_docker_sqlite  # Push ke remote dan set tracking branch
+```
+
+## 13. DEPLOY DOCKER FLASK POSTGRE PGADMIN
+
+1. Dockerfile
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY . .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+CMD ["python", "app.py"]
+
+```
+
+2. docker-compose.yml
+
+```yml
+version: "3.8"
+
+services:
+  web:
+    build: .
+    container_name: flask_api
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=siswa_db
+      - DB_USER=siswa_user
+      - DB_PASSWORD=siswa_pass
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: siswa_db
+      POSTGRES_USER: siswa_user
+      POSTGRES_PASSWORD: siswa_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
+```
+
+requirements.txt
+
+```
+Flask==2.3.3
+flasgger==0.9.7.1
+flask-cors==4.0.0
+psycopg2-binary==2.9.9
+
+```
+
+```py
+
+#4. utils/db.py
+import psycopg2
+import os
+from flask import current_app
+
+def get_db():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=os.getenv("DB_PORT", 5432),
+        database=os.getenv("DB_NAME", "siswa_db"),
+        user=os.getenv("DB_USER", "siswa_user"),
+        password=os.getenv("DB_PASSWORD", "siswa_pass")
+    )
+
+#5. app.py
+import os
+from flask import Flask, jsonify
+from flask_cors import CORS
+from flasgger import Swagger
+from utils.db import get_db
+
+app = Flask(__name__)
+CORS(app)
+
+app.config['SWAGGER'] = {
+    'title': 'BELAJAR AUTH API',
+    'uiversion': 3,
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
+
+swagger = Swagger(app)
+
+def init_db():
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS tb_user (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                token TEXT
+            )
+        ''')
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS tb_siswa (
+                id SERIAL PRIMARY KEY,
+                nama TEXT NOT NULL,
+                alamat TEXT NOT NULL
+            )
+        ''')
+        conn.commit()
+
+init_db()
+
+from routes.auth import auth_bp
+from routes.siswa import siswa_bp
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+#6. services/siswa_service.py
+from utils.db import get_db
+
+def read_all_siswa():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nama, alamat FROM tb_siswa")
+    rows = cur.fetchall()
+    conn.close()
+    return [{"id": r[0], "nama": r[1], "alamat": r[2]} for r in rows]
+
+def create_siswa(nama, alamat):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO tb_siswa (nama, alamat) VALUES (%s, %s) RETURNING id",
+        (nama, alamat)
+    )
+    siswa_id = cur.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return siswa_id
+
+def read_siswa_by_id(siswa_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nama, alamat FROM tb_siswa WHERE id = %s", (siswa_id,))
+    row = cur.fetchone()
+    conn.close()
+    return {"id": row[0], "nama": row[1], "alamat": row[2]} if row else None
+
+def delete_siswa(siswa_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM tb_siswa WHERE id = %s", (siswa_id,))
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+def update_siswa(siswa_id, nama, alamat):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE tb_siswa SET nama = %s, alamat = %s WHERE id = %s",
+        (nama, alamat, siswa_id)
+    )
+    updated = cur.rowcount
+    conn.commit()
+    conn.close()
+    return updated
+
+
+#7. middleware/auth_middleware.py
+from functools import wraps
+from flask import request, jsonify
+from utils.db import get_db
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token diperlukan'}), 401
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM tb_user WHERE token = %s", (token,))
+        user = cur.fetchone()
+        conn.close()
+        if not user:
+            return jsonify({'error': 'Token tidak valid'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+#8. routes/auth.py
+import uuid
+import hashlib
+from flask import Blueprint, request, jsonify
+from flasgger.utils import swag_from
+from utils.db import get_db
+import psycopg2
+
+auth_bp = Blueprint('auth', __name__)
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+@auth_bp.route('/register', methods=['POST'])
+@swag_from('../docs/auth/register.yml')
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({"error": "Field 'username' dan 'password' wajib diisi"}), 400
+
+    password_hashed = hash_password(password)
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO tb_user (username, password) VALUES (%s, %s)",
+            (username, password_hashed)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Registrasi berhasil"}), 201
+    except psycopg2.IntegrityError:
+        return jsonify({"error": "Username sudah digunakan"}), 409
+    except Exception as e:
+        return jsonify({"error": f"Gagal mendaftar: {str(e)}"}), 500
+
+@auth_bp.route('/login', methods=['POST'])
+@swag_from('../docs/auth/login.yml')
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = hash_password(data.get('password'))
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM tb_user WHERE username = %s AND password = %s", (username, password))
+    user = cur.fetchone()
+
+    if user:
+        token = str(uuid.uuid4())
+        cur.execute("UPDATE tb_user SET token = %s WHERE username = %s", (token, username))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Login berhasil", "token": token}), 200
+    conn.close()
+    return jsonify({"error": "Username atau password salah"}), 401
+
+@auth_bp.route('/logout', methods=['POST'])
+@swag_from('../docs/auth/logout.yml')
+def logout():
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({"error": "Token tidak ditemukan"}), 401
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE tb_user SET token = NULL WHERE token = %s", (token,))
+    conn.commit()
+    affected = cur.rowcount
+    conn.close()
+
+    if affected:
+        return jsonify({"message": "Logout berhasil"}), 200
+    return jsonify({"error": "Token tidak valid"}), 401
+
+```
+
+## 14. DATABASE MONGODB
+
+## 15. DEPLOY DOCKER FLASK MONGO
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY . .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+CMD ["python", "app.py"]
+
+```
+
+docker-compose.yml
+
+```yml
+version: "3.8"
+
+services:
+  web:
+    build: .
+    container_name: flask_api
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/siswa_db
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  mongo_express:
+    image: mongo-express:1.0.0
+    container_name: mongo_express
+    restart: always
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin123
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
+```
+
+```py
+#3. requirements.txt
+Flask==2.3.3
+flasgger==0.9.7.1
+flask-cors==4.0.0
+pymongo==4.3.3
+
+
+#4. utils/db.py
+from pymongo import MongoClient
+import os
+
+mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/siswa_db")
+client = MongoClient(mongo_uri)
+db = client.get_database()
+
+def get_db():
+    return db
+
+#5. app.py
+from flask import Flask
+from flask_cors import CORS
+from flasgger import Swagger
+
+app = Flask(__name__)
+CORS(app)
+
+app.config['SWAGGER'] = {
+    'title': 'BELAJAR AUTH API',
+    'uiversion': 3,
+    'securityDefinitions': {
+        'ApiKeyAuth': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    }
+}
+
+swagger = Swagger(app)
+
+# No need init_db for MongoDB; collections auto-create on first insert
+
+from routes.auth import auth_bp
+from routes.siswa import siswa_bp
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(siswa_bp)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+#6. services/siswa_service.py
+from utils.db import get_db
+from bson.objectid import ObjectId
+
+db = get_db()
+siswa_col = db.tb_siswa
+
+def read_all_siswa():
+    result = []
+    for doc in siswa_col.find():
+        result.append({
+            "id": str(doc["_id"]),
+            "nama": doc.get("nama"),
+            "alamat": doc.get("alamat")
+        })
+    return result
+
+def create_siswa(nama, alamat):
+    doc = {"nama": nama, "alamat": alamat}
+    result = siswa_col.insert_one(doc)
+    return str(result.inserted_id)
+
+def read_siswa_by_id(siswa_id):
+    doc = siswa_col.find_one({"_id": ObjectId(siswa_id)})
+    if not doc:
+        return None
+    return {
+        "id": str(doc["_id"]),
+        "nama": doc.get("nama"),
+        "alamat": doc.get("alamat")
+    }
+
+def delete_siswa(siswa_id):
+    result = siswa_col.delete_one({"_id": ObjectId(siswa_id)})
+    return result.deleted_count
+
+def update_siswa(siswa_id, nama, alamat):
+    result = siswa_col.update_one(
+        {"_id": ObjectId(siswa_id)},
+        {"$set": {"nama": nama, "alamat": alamat}}
+    )
+    return result.modified_count
+
+#7. middleware/auth_middleware.py
+from functools import wraps
+from flask import request, jsonify
+from utils.db import get_db
+
+db = get_db()
+user_col = db.tb_user
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'error': 'Token diperlukan'}), 401
+        user = user_col.find_one({"token": token})
+        if not user:
+            return jsonify({'error': 'Token tidak valid'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+#8. routes/auth.py
+import uuid
+import hashlib
+from flask import Blueprint, request, jsonify
+from flasgger.utils import swag_from
+from utils.db import get_db
+
+auth_bp = Blueprint('auth', __name__)
+db = get_db()
+user_col = db.tb_user
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+@auth_bp.route('/register', methods=['POST'])
+@swag_from('../docs/auth/register.yml')
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({"error": "Field 'username' dan 'password' wajib diisi"}), 400
+
+    if user_col.find_one({"username": username}):
+        return jsonify({"error": "Username sudah digunakan"}), 409
+
+    user_col.insert_one({
+        "username": username,
+        "password": hash_password(password),
+        "token": None
+    })
+    return jsonify({"message": "Registrasi berhasil"}), 201
+
+@auth_bp.route('/login', methods=['POST'])
+@swag_from('../docs/auth/login.yml')
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = hash_password(data.get('password'))
+
+    user = user_col.find_one({"username": username, "password": password})
+    if not user:
+        return jsonify({"error": "Username atau password salah"}), 401
+
+    token = str(uuid.uuid4())
+    user_col.update_one({"_id": user["_id"]}, {"$set": {"token": token}})
+    return jsonify({"message": "Login berhasil", "token": token}), 200
+
+@auth_bp.route('/logout', methods=['POST'])
+@swag_from('../docs/auth/logout.yml')
+def logout():
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({"error": "Token tidak ditemukan"}), 401
+
+    result = user_col.update_one({"token": token}, {"$set": {"token": None}})
+    if result.modified_count == 0:
+        return jsonify({"error": "Token tidak valid"}), 401
+
+    return jsonify({"message": "Logout berhasil"}), 200
+
+
+```
+
 ## 8. SISWA AUTH API FRONTEND REACTJS
 
 ```
@@ -2469,893 +3408,3 @@ docker compose up --build
 Frontend: http://localhost:3000
 
 Backend API: http://localhost:5000
-
-## 10. DATABASE MYSQL
-
-## 11. DEPLOY DOCKER MYSQL
-
-```dockerfile
-# Dockerfile tetap sama
-FROM python:3.10-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir -r requirements.txt
-EXPOSE 5000
-CMD ["python", "app.py"]
-
-```
-
-docker-compose.yml
-
-```yml
-version: "3.9"
-
-services:
-  flask-api:
-    build: .
-    container_name: flask_auth_api
-    ports:
-      - "5000:5000"
-    volumes:
-      - .:/app
-    environment:
-      - DB_HOST=mysql
-      - DB_USER=root
-      - DB_PASSWORD=password
-      - DB_NAME=flaskdb
-    depends_on:
-      - mysql
-    restart: always
-
-  mysql:
-    image: mysql:8
-    container_name: flask_mysql
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: flaskdb
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-
-volumes:
-  mysql-data:
-```
-
-requirements.txt
-
-```
-flask
-flask-cors
-flasgger
-mysql-connector-python
-
-```
-
-```py
-# utils/db.py
-import mysql.connector
-import os
-
-def get_db():
-    return mysql.connector.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        user=os.getenv("DB_USER", "root"),
-        password=os.getenv("DB_PASSWORD", ""),
-        database=os.getenv("DB_NAME", "flaskdb")
-    )
-
-# app.py
-import os
-from flask import Flask, jsonify
-from flask_cors import CORS
-from flasgger import Swagger
-from utils.db import get_db
-
-app = Flask(__name__)
-CORS(app)
-
-app.config['SWAGGER'] = {
-    'title': 'BELAJAR AUTH API',
-    'uiversion': 3,
-    'securityDefinitions': {
-        'ApiKeyAuth': {
-            'type': 'apiKey',
-            'name': 'Authorization',
-            'in': 'header'
-        }
-    }
-}
-
-swagger = Swagger(app)
-
-def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tb_user (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(100) UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            token TEXT
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tb_siswa (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            nama VARCHAR(255) NOT NULL,
-            alamat TEXT NOT NULL
-        )
-    ''')
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-init_db()
-
-from routes.auth import auth_bp
-from routes.siswa import siswa_bp
-app.register_blueprint(auth_bp)
-app.register_blueprint(siswa_bp)
-
-if __name__ == '__main__':
-    app.run(debug=True)
-
-
-# services/siswa_service.py
-from utils.db import get_db
-
-def row_to_dict(cursor, row):
-    return {desc[0]: value for desc, value in zip(cursor.description, row)}
-
-def get_db_connection():
-    conn = get_db()
-    return conn
-
-def read_all_siswa():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, nama, alamat FROM tb_siswa")
-    rows = cursor.fetchall()
-    data = [row_to_dict(cursor, row) for row in rows]
-    cursor.close()
-    conn.close()
-    return data
-
-def create_siswa(nama, alamat):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO tb_siswa (nama, alamat) VALUES (%s, %s)",
-        (nama, alamat)
-    )
-    conn.commit()
-    siswa_id = cursor.lastrowid
-    cursor.close()
-    conn.close()
-    return siswa_id
-
-def read_siswa_by_id(id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, nama, alamat FROM tb_siswa WHERE id = %s", (id,))
-    row = cursor.fetchone()
-    result = row_to_dict(cursor, row) if row else None
-    cursor.close()
-    conn.close()
-    return result
-
-def delete_siswa(siswa_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM tb_siswa WHERE id = %s", (siswa_id,))
-    conn.commit()
-    deleted = cursor.rowcount
-    cursor.close()
-    conn.close()
-    return deleted
-
-def update_siswa(siswa_id, nama, alamat):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE tb_siswa SET nama = %s, alamat = %s WHERE id = %s",
-        (nama, alamat, siswa_id)
-    )
-    conn.commit()
-    updated = cursor.rowcount
-    cursor.close()
-    conn.close()
-    return updated
-
-# middleware/auth_middleware.py
-from functools import wraps
-from flask import request, jsonify
-from utils.db import get_db
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'error': 'Token diperlukan'}), 401
-        conn = get_db()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM tb_user WHERE token = %s", (token,))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        if not user:
-            return jsonify({'error': 'Token tidak valid'}), 401
-        return f(*args, **kwargs)
-    return decorated
-
-
-# routes/auth.py
-from flask import Blueprint, request, jsonify
-from flasgger.utils import swag_from
-from utils.db import get_db
-import secrets
-
-auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
-
-@auth_bp.route('/register', methods=['POST'])
-@swag_from({
-    'tags': ['Auth'],
-    'parameters': [
-        {
-            'name': 'body',
-            'in': 'body',
-            'schema': {
-                'type': 'object',
-                'properties': {
-                    'username': {'type': 'string'},
-                    'password': {'type': 'string'}
-                },
-                'required': ['username', 'password']
-            }
-        }
-    ],
-    'responses': {
-        200: {'description': 'Registrasi berhasil'},
-        400: {'description': 'Username sudah digunakan'}
-    }
-})
-def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM tb_user WHERE username = %s", (username,))
-    if cursor.fetchone():
-        cursor.close()
-        conn.close()
-        return jsonify({'error': 'Username sudah digunakan'}), 400
-
-    cursor.execute("INSERT INTO tb_user (username, password) VALUES (%s, %s)", (username, password))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({'message': 'Registrasi berhasil'}), 200
-
-@auth_bp.route('/login', methods=['POST'])
-@swag_from({
-    'tags': ['Auth'],
-    'parameters': [
-        {
-            'name': 'body',
-            'in': 'body',
-            'schema': {
-                'type': 'object',
-                'properties': {
-                    'username': {'type': 'string'},
-                    'password': {'type': 'string'}
-                },
-                'required': ['username', 'password']
-            }
-        }
-    ],
-    'responses': {
-        200: {'description': 'Login berhasil'},
-        401: {'description': 'Username atau password salah'}
-    }
-})
-def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    conn = get_db()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM tb_user WHERE username = %s AND password = %s", (username, password))
-    user = cursor.fetchone()
-
-    if not user:
-        cursor.close()
-        conn.close()
-        return jsonify({'error': 'Username atau password salah'}), 401
-
-    token = secrets.token_hex(16)
-    cursor.execute("UPDATE tb_user SET token = %s WHERE id = %s", (token, user['id']))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    return jsonify({'message': 'Login berhasil', 'token': token}), 200
-
-@auth_bp.route('/logout', methods=['POST'])
-@swag_from({
-    'tags': ['Auth'],
-    'security': [{'ApiKeyAuth': []}],
-    'responses': {
-        200: {'description': 'Logout berhasil'},
-        401: {'description': 'Token tidak valid'}
-    }
-})
-def logout():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({'error': 'Token diperlukan'}), 401
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id FROM tb_user WHERE token = %s", (token,))
-    user = cursor.fetchone()
-    if not user:
-        cursor.close()
-        conn.close()
-        return jsonify({'error': 'Token tidak valid'}), 401
-
-    cursor.execute("UPDATE tb_user SET token = NULL WHERE token = %s", (token,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({'message': 'Logout berhasil'}), 200
-
-```
-
-## 12. DATABASE POSTGRE
-
-## 13. DEPLOY DOCKER FLASK POSTGRE PGADMIN
-
-1. Dockerfile
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY . .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-CMD ["python", "app.py"]
-
-```
-
-2. docker-compose.yml
-
-```yml
-version: "3.8"
-
-services:
-  web:
-    build: .
-    container_name: flask_api
-    ports:
-      - "5000:5000"
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=siswa_db
-      - DB_USER=siswa_user
-      - DB_PASSWORD=siswa_pass
-    depends_on:
-      - db
-
-  db:
-    image: postgres:15
-    container_name: postgres_db
-    environment:
-      POSTGRES_DB: siswa_db
-      POSTGRES_USER: siswa_user
-      POSTGRES_PASSWORD: siswa_pass
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin123
-    ports:
-      - "5050:80"
-    depends_on:
-      - db
-
-volumes:
-  postgres_data:
-```
-
-requirements.txt
-
-```
-Flask==2.3.3
-flasgger==0.9.7.1
-flask-cors==4.0.0
-psycopg2-binary==2.9.9
-
-```
-
-```py
-
-#4. utils/db.py
-import psycopg2
-import os
-from flask import current_app
-
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", 5432),
-        database=os.getenv("DB_NAME", "siswa_db"),
-        user=os.getenv("DB_USER", "siswa_user"),
-        password=os.getenv("DB_PASSWORD", "siswa_pass")
-    )
-
-#5. app.py
-import os
-from flask import Flask, jsonify
-from flask_cors import CORS
-from flasgger import Swagger
-from utils.db import get_db
-
-app = Flask(__name__)
-CORS(app)
-
-app.config['SWAGGER'] = {
-    'title': 'BELAJAR AUTH API',
-    'uiversion': 3,
-    'securityDefinitions': {
-        'ApiKeyAuth': {
-            'type': 'apiKey',
-            'name': 'Authorization',
-            'in': 'header'
-        }
-    }
-}
-
-swagger = Swagger(app)
-
-def init_db():
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS tb_user (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(255) UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                token TEXT
-            )
-        ''')
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS tb_siswa (
-                id SERIAL PRIMARY KEY,
-                nama TEXT NOT NULL,
-                alamat TEXT NOT NULL
-            )
-        ''')
-        conn.commit()
-
-init_db()
-
-from routes.auth import auth_bp
-from routes.siswa import siswa_bp
-
-app.register_blueprint(auth_bp)
-app.register_blueprint(siswa_bp)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
-#6. services/siswa_service.py
-from utils.db import get_db
-
-def read_all_siswa():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT id, nama, alamat FROM tb_siswa")
-    rows = cur.fetchall()
-    conn.close()
-    return [{"id": r[0], "nama": r[1], "alamat": r[2]} for r in rows]
-
-def create_siswa(nama, alamat):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO tb_siswa (nama, alamat) VALUES (%s, %s) RETURNING id",
-        (nama, alamat)
-    )
-    siswa_id = cur.fetchone()[0]
-    conn.commit()
-    conn.close()
-    return siswa_id
-
-def read_siswa_by_id(siswa_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT id, nama, alamat FROM tb_siswa WHERE id = %s", (siswa_id,))
-    row = cur.fetchone()
-    conn.close()
-    return {"id": row[0], "nama": row[1], "alamat": row[2]} if row else None
-
-def delete_siswa(siswa_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM tb_siswa WHERE id = %s", (siswa_id,))
-    deleted = cur.rowcount
-    conn.commit()
-    conn.close()
-    return deleted
-
-def update_siswa(siswa_id, nama, alamat):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE tb_siswa SET nama = %s, alamat = %s WHERE id = %s",
-        (nama, alamat, siswa_id)
-    )
-    updated = cur.rowcount
-    conn.commit()
-    conn.close()
-    return updated
-
-
-#7. middleware/auth_middleware.py
-from functools import wraps
-from flask import request, jsonify
-from utils.db import get_db
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'error': 'Token diperlukan'}), 401
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM tb_user WHERE token = %s", (token,))
-        user = cur.fetchone()
-        conn.close()
-        if not user:
-            return jsonify({'error': 'Token tidak valid'}), 401
-        return f(*args, **kwargs)
-    return decorated
-
-
-#8. routes/auth.py
-import uuid
-import hashlib
-from flask import Blueprint, request, jsonify
-from flasgger.utils import swag_from
-from utils.db import get_db
-import psycopg2
-
-auth_bp = Blueprint('auth', __name__)
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-@auth_bp.route('/register', methods=['POST'])
-@swag_from('../docs/auth/register.yml')
-def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    if not username or not password:
-        return jsonify({"error": "Field 'username' dan 'password' wajib diisi"}), 400
-
-    password_hashed = hash_password(password)
-
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO tb_user (username, password) VALUES (%s, %s)",
-            (username, password_hashed)
-        )
-        conn.commit()
-        conn.close()
-        return jsonify({"message": "Registrasi berhasil"}), 201
-    except psycopg2.IntegrityError:
-        return jsonify({"error": "Username sudah digunakan"}), 409
-    except Exception as e:
-        return jsonify({"error": f"Gagal mendaftar: {str(e)}"}), 500
-
-@auth_bp.route('/login', methods=['POST'])
-@swag_from('../docs/auth/login.yml')
-def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = hash_password(data.get('password'))
-
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM tb_user WHERE username = %s AND password = %s", (username, password))
-    user = cur.fetchone()
-
-    if user:
-        token = str(uuid.uuid4())
-        cur.execute("UPDATE tb_user SET token = %s WHERE username = %s", (token, username))
-        conn.commit()
-        conn.close()
-        return jsonify({"message": "Login berhasil", "token": token}), 200
-    conn.close()
-    return jsonify({"error": "Username atau password salah"}), 401
-
-@auth_bp.route('/logout', methods=['POST'])
-@swag_from('../docs/auth/logout.yml')
-def logout():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({"error": "Token tidak ditemukan"}), 401
-
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE tb_user SET token = NULL WHERE token = %s", (token,))
-    conn.commit()
-    affected = cur.rowcount
-    conn.close()
-
-    if affected:
-        return jsonify({"message": "Logout berhasil"}), 200
-    return jsonify({"error": "Token tidak valid"}), 401
-
-```
-
-## 14. DATABASE MONGODB
-
-## 15. DEPLOY DOCKER FLASK MONGO
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-COPY . .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-CMD ["python", "app.py"]
-
-```
-
-docker-compose.yml
-
-```yml
-version: "3.8"
-
-services:
-  web:
-    build: .
-    container_name: flask_api
-    ports:
-      - "5000:5000"
-    environment:
-      - MONGO_URI=mongodb://mongo:27017/siswa_db
-    depends_on:
-      - mongo
-
-  mongo:
-    image: mongo:6.0
-    container_name: mongo
-    restart: always
-    volumes:
-      - mongo_data:/data/db
-    ports:
-      - "27017:27017"
-
-  mongo_express:
-    image: mongo-express:1.0.0
-    container_name: mongo_express
-    restart: always
-    environment:
-      - ME_CONFIG_MONGODB_SERVER=mongo
-      - ME_CONFIG_MONGODB_PORT=27017
-      - ME_CONFIG_BASICAUTH_USERNAME=admin
-      - ME_CONFIG_BASICAUTH_PASSWORD=admin123
-    ports:
-      - "8081:8081"
-    depends_on:
-      - mongo
-
-volumes:
-  mongo_data:
-```
-
-```py
-#3. requirements.txt
-Flask==2.3.3
-flasgger==0.9.7.1
-flask-cors==4.0.0
-pymongo==4.3.3
-
-
-#4. utils/db.py
-from pymongo import MongoClient
-import os
-
-mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/siswa_db")
-client = MongoClient(mongo_uri)
-db = client.get_database()
-
-def get_db():
-    return db
-
-#5. app.py
-from flask import Flask
-from flask_cors import CORS
-from flasgger import Swagger
-
-app = Flask(__name__)
-CORS(app)
-
-app.config['SWAGGER'] = {
-    'title': 'BELAJAR AUTH API',
-    'uiversion': 3,
-    'securityDefinitions': {
-        'ApiKeyAuth': {
-            'type': 'apiKey',
-            'name': 'Authorization',
-            'in': 'header'
-        }
-    }
-}
-
-swagger = Swagger(app)
-
-# No need init_db for MongoDB; collections auto-create on first insert
-
-from routes.auth import auth_bp
-from routes.siswa import siswa_bp
-
-app.register_blueprint(auth_bp)
-app.register_blueprint(siswa_bp)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
-#6. services/siswa_service.py
-from utils.db import get_db
-from bson.objectid import ObjectId
-
-db = get_db()
-siswa_col = db.tb_siswa
-
-def read_all_siswa():
-    result = []
-    for doc in siswa_col.find():
-        result.append({
-            "id": str(doc["_id"]),
-            "nama": doc.get("nama"),
-            "alamat": doc.get("alamat")
-        })
-    return result
-
-def create_siswa(nama, alamat):
-    doc = {"nama": nama, "alamat": alamat}
-    result = siswa_col.insert_one(doc)
-    return str(result.inserted_id)
-
-def read_siswa_by_id(siswa_id):
-    doc = siswa_col.find_one({"_id": ObjectId(siswa_id)})
-    if not doc:
-        return None
-    return {
-        "id": str(doc["_id"]),
-        "nama": doc.get("nama"),
-        "alamat": doc.get("alamat")
-    }
-
-def delete_siswa(siswa_id):
-    result = siswa_col.delete_one({"_id": ObjectId(siswa_id)})
-    return result.deleted_count
-
-def update_siswa(siswa_id, nama, alamat):
-    result = siswa_col.update_one(
-        {"_id": ObjectId(siswa_id)},
-        {"$set": {"nama": nama, "alamat": alamat}}
-    )
-    return result.modified_count
-
-#7. middleware/auth_middleware.py
-from functools import wraps
-from flask import request, jsonify
-from utils.db import get_db
-
-db = get_db()
-user_col = db.tb_user
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'error': 'Token diperlukan'}), 401
-        user = user_col.find_one({"token": token})
-        if not user:
-            return jsonify({'error': 'Token tidak valid'}), 401
-        return f(*args, **kwargs)
-    return decorated
-
-#8. routes/auth.py
-import uuid
-import hashlib
-from flask import Blueprint, request, jsonify
-from flasgger.utils import swag_from
-from utils.db import get_db
-
-auth_bp = Blueprint('auth', __name__)
-db = get_db()
-user_col = db.tb_user
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-@auth_bp.route('/register', methods=['POST'])
-@swag_from('../docs/auth/register.yml')
-def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-
-    if not username or not password:
-        return jsonify({"error": "Field 'username' dan 'password' wajib diisi"}), 400
-
-    if user_col.find_one({"username": username}):
-        return jsonify({"error": "Username sudah digunakan"}), 409
-
-    user_col.insert_one({
-        "username": username,
-        "password": hash_password(password),
-        "token": None
-    })
-    return jsonify({"message": "Registrasi berhasil"}), 201
-
-@auth_bp.route('/login', methods=['POST'])
-@swag_from('../docs/auth/login.yml')
-def login():
-    data = request.get_json()
-    username = data.get('username')
-    password = hash_password(data.get('password'))
-
-    user = user_col.find_one({"username": username, "password": password})
-    if not user:
-        return jsonify({"error": "Username atau password salah"}), 401
-
-    token = str(uuid.uuid4())
-    user_col.update_one({"_id": user["_id"]}, {"$set": {"token": token}})
-    return jsonify({"message": "Login berhasil", "token": token}), 200
-
-@auth_bp.route('/logout', methods=['POST'])
-@swag_from('../docs/auth/logout.yml')
-def logout():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({"error": "Token tidak ditemukan"}), 401
-
-    result = user_col.update_one({"token": token}, {"$set": {"token": None}})
-    if result.modified_count == 0:
-        return jsonify({"error": "Token tidak valid"}), 401
-
-    return jsonify({"message": "Logout berhasil"}), 200
-
-
-```
