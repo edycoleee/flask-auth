@@ -1638,12 +1638,16 @@ git commit -m "finish"          # Commit dengan pesan "finish"
 git push -u origin 04_mysql_docker  # Push ke remote dan set tracking branch
 ```
 
+1. membuat file di folder baru
+
+docker-compose.yml
+
 ```yml
 version: "3.8"
 
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0 # arm64v8/mysql >>  Raspberry Pi, Jetson, atau Mac M1/M2
     container_name: mysql
     restart: always
     environment:
@@ -1667,68 +1671,23 @@ volumes:
   mysql-data:
 ```
 
-## 11. DEPLOY DOCKER MYSQL
+2. copykan ke folder /mysqldocker
 
-```dockerfile
-# Dockerfile tetap sama
-FROM python:3.10-slim
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir -r requirements.txt
-EXPOSE 5000
-CMD ["python", "app.py"]
+3. jalankan ssh ke server ubuntu >> mysql siap di gunakan http://localhost:8080
 
 ```
+ssh silmi@192.168.10.2
 
-docker-compose.yml
-
-```yml
-version: "3.9"
-
-services:
-  flask-api:
-    build: .
-    container_name: flask_auth_api
-    ports:
-      - "5000:5000"
-    volumes:
-      - .:/app
-    environment:
-      - DB_HOST=mysql
-      - DB_USER=root
-      - DB_PASSWORD=password
-      - DB_NAME=flaskdb
-    depends_on:
-      - mysql
-    restart: always
-
-  mysql:
-    image: mysql:8
-    container_name: flask_mysql
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: flaskdb
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-
-volumes:
-  mysql-data:
+masuk ke folder
+docker compose up --build -d
 ```
 
-requirements.txt
-
-```
-flask
-flask-cors
-flasgger
-mysql-connector-python
-
-```
+4. update semua file sesuai dengan mysql
 
 ```py
+
+mysql-connector-python
+
 # utils/db.py
 import mysql.connector
 import os
@@ -2009,6 +1968,67 @@ def logout():
     cursor.close()
     conn.close()
     return jsonify({'message': 'Logout berhasil'}), 200
+
+```
+
+## 11. DEPLOY DOCKER MYSQL
+
+```dockerfile
+# Dockerfile tetap sama
+FROM python:3.10-slim
+WORKDIR /app
+COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
+EXPOSE 5000
+CMD ["python", "app.py"]
+
+```
+
+docker-compose.yml
+
+```yml
+version: "3.9"
+
+services:
+  flask-api:
+    build: .
+    container_name: flask_auth_api
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+    environment:
+      - DB_HOST=mysql
+      - DB_USER=root
+      - DB_PASSWORD=password
+      - DB_NAME=flaskdb
+    depends_on:
+      - mysql
+    restart: always
+
+  mysql:
+    image: mysql:8
+    container_name: flask_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: flaskdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+volumes:
+  mysql-data:
+```
+
+requirements.txt
+
+```
+flask
+flask-cors
+flasgger
+mysql-connector-python
 
 ```
 
